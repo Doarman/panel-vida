@@ -83,7 +83,7 @@ async function pruebaDeConexion() {
   ]);
 
   const min = Math.max(0, Math.round((venceEn() - Date.now()) / 60000));
-  $('#sesion-info').textContent = `Sesión válida por ${min} min. Se renueva sola.`;
+  $('#sesion-info').textContent = `Sesión válida por ${min} min. Después, un toque para reanudar.`;
   btn.disabled = false;
 }
 
@@ -169,12 +169,14 @@ addEventListener('hashchange', rutear);
 // ---------- arranque ----------
 
 function fechaDeHoy() {
-  $('#fecha').textContent = new Intl.DateTimeFormat('es-AR', {
+  const f = new Intl.DateTimeFormat('es-AR', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     timeZone: 'America/Argentina/Cordoba',
   }).format(new Date());
+  // En castellano solo va en mayúscula la primera letra: "Viernes, 14 de agosto".
+  $('#fecha').textContent = f.charAt(0).toUpperCase() + f.slice(1);
 }
 
 async function entrar() {
