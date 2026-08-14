@@ -61,19 +61,62 @@ export async function eventosDeHoy() {
   return j.items || [];
 }
 
+// El triage pesado lo hace Gmail, no nosotros: sus propias categorías sacan
+// promociones, redes y foros antes de que nada viaje por la red del celular.
+const CONSULTA =
+  'is:unread newer_than:7d -category:promotions -category:social -category:forums -in:chats';
+
+const TOPE = 8; // cuántos traemos con remitente y asunto
+
 /**
- * Correo sin leer, ya filtrado del lado del servidor.
- * Las categorías de Gmail hacen el grueso del triage sin que traigamos nada:
- * promociones, redes sociales y foros quedan afuera antes de viajar.
+ * Correo que puede requerir tu mirada. Devuelve los primeros con detalle y
+ * cuántos quedaron sin mostrar.
+ *
+ * messages.list solo devuelve IDs, así que el detalle cuesta una llamada por
+ * mensaje. Por eso el tope: en 4G, treinta llamadas son una pantalla que tarda.
  */
 export async function correoParaMirar() {
   const u = new URL('https://www.googleapis.com/gmail/v1/users/me/messages');
-  u.search = new URLSearchParams({
-    q: 'is:unread newer_than:3d -category:promotions -category:social -category:forums',
-    maxResults: '25',
-  });
-  const j = await pedir(u);
-  return { ids: j.messages || [], estimado: j.resultSizeEstimate ?? 0 };
+  u.search = new URLSearchParams({ q: CONSULTA, maxResults: '25' });
+  const lista = await pedir(u);
+
+  const ids = lista.messages || [];
+  const total = ids.length;
+
+  const detalles = await Promise.all(
+    ids.slice(0, TOPE).map(async ({ id }) => {
+      const d = new URL(`https://www.googleapis.com/gmail/v1/users/me/messages/${id}`);
+      d.search = new URLSearchParams([
+        ['format', 'metadata'],
+        ['metadataHeaders', 'From'],
+        ['metadataHeaders', 'Subject'],
+        ['metadataHeaders', 'List-Unsubscribe'],
+      ]);
+      const m = await pedir(d);
+      const h = {};
+      for (const { name, value } of m.payload?.headers || []) h[name.toLowerCase()] = value;
+
+      return {
+        id,
+        de: nombreDeRemitente(h.from || ''),
+        asunto: h.subject || '(sin asunto)',
+        // Un encabezado para desuscribirse es la firma casi perfecta de un
+        // envío masivo: newsletters y notificaciones automáticas lo llevan,
+        // una persona escribiéndote no.
+        masivo: Boolean(h['list-unsubscribe']),
+      };
+    })
+  );
+
+  return { mensajes: detalles, total, ocultos: Math.max(0, total - detalles.length) };
+}
+
+/** "Nico Quiroga <nico@x.com>" -> "Nico Quiroga". Si no hay nombre, el usuario. */
+function nombreDeRemitente(from) {
+  const conNombre = from.match(/^\s*"?([^"<]+?)"?\s*</);
+  if (conNombre) return conNombre[1].trim();
+  const soloMail = from.match(/([^@<\s]+)@/);
+  return soloMail ? soloMail[1] : from.trim() || 'Desconocido';
 }
 
 /** Baja un archivo de Drive por ID y lo parsea como JSON. */

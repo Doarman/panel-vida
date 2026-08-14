@@ -1,91 +1,334 @@
-/* Panel de Vida — hoja única, mobile-first.
-   Se usa con una mano y recién levantado: tipografía grande, contraste
-   suficiente pero no agresivo, nada de bordes duros ni acentos chillones. */
+/* Panel de Vida
+   Se usa con una mano, recién levantado, en la oscuridad. De ahí las decisiones:
+   fondo profundo con una luz cálida arriba (primera luz), superficies con
+   volumen en vez de rectángulos planos, y el color reservado para señalar
+   qué tipo de bloque es cada cosa. Nada de dashboards corporativos. */
 
 :root {
-  --bg: #0f1714;
-  --bg-card: #16211c;
-  --linea: #24332c;
-  --texto: #e6ece8;
-  --texto-mudo: #8fa39a;
-  --acento: #e8b563;
-  --ok: #7fbf8f;
-  --falla: #d98b7a;
+  --fondo: #0a100d;
+  --texto: #eaf0ec;
+  --mudo: #8a9c93;
+  --tenue: #5f7169;
 
-  --r: 14px;
-  --gap: 14px;
+  --linea: rgba(255, 255, 255, 0.075);
+  --linea-suave: rgba(255, 255, 255, 0.045);
+
+  --ambar: #e8b563;
+  --ok: #7fbf8f;
+  --mal: #e08a6f;
+
+  /* tipos de bloque */
+  --t-salud: #e08a6f;
+  --t-tesis: #7fa8d9;
+  --t-flexible: #8fa39a;
+  --t-profesional: #b79bd9;
+  --t-externo: #566860;
+  --t-otro: #6f8279;
+
+  --r: 18px;
   --safe-b: env(safe-area-inset-bottom, 0px);
 }
 
 * { box-sizing: border-box; }
-
 html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
   min-height: 100dvh;
-  padding: max(env(safe-area-inset-top), 18px) 18px calc(96px + var(--safe-b));
-  background: var(--bg);
+  padding: max(env(safe-area-inset-top), 20px) 16px calc(104px + var(--safe-b));
   color: var(--texto);
-  font: 400 17px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 400 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
+
+  /* la luz de arriba es lo que saca al fondo de ser un rectángulo negro */
+  background:
+    radial-gradient(125% 55% at 50% -8%, rgba(232, 181, 99, 0.11), transparent 62%),
+    radial-gradient(90% 40% at 88% 4%, rgba(127, 168, 217, 0.05), transparent 70%),
+    var(--fondo);
+  background-attachment: fixed;
 }
 
 .oculto { display: none !important; }
 
 /* ---------- encabezado ---------- */
-.top { margin-bottom: 22px; }
+
+.top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 22px;
+  padding: 0 4px;
+}
 
 .top h1 {
   margin: 0;
-  font-size: 26px;
+  font-size: 27px;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.022em;
 }
 
+/* La fecha es además el acceso al diagnóstico: información técnica a un toque
+   de distancia, pero fuera del camino. */
 .fecha {
-  margin: 2px 0 0;
-  color: var(--texto-mudo);
-  font-size: 15px;
+  display: block;
+  margin: 3px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--mudo);
+  font: inherit;
+  font-size: 14.5px;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* ---------- tarjetas ---------- */
+.pulso {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-top: 9px;
+  border-radius: 50%;
+  background: var(--tenue);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.03);
+}
+
+.pulso.ok { background: var(--ok); box-shadow: 0 0 12px rgba(127, 191, 143, 0.5); }
+.pulso.mal { background: var(--mal); box-shadow: 0 0 12px rgba(224, 138, 111, 0.45); }
+
+/* ---------- superficies ---------- */
+
+.bloque,
+.ahora,
 .card {
-  background: var(--bg-card);
   border: 1px solid var(--linea);
   border-radius: var(--r);
-  padding: 18px;
-  margin-bottom: var(--gap);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.042), rgba(255, 255, 255, 0.012));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 14px 34px -24px rgba(0, 0, 0, 0.95);
 }
 
-.card h2 {
-  margin: 0 0 8px;
-  font-size: 15px;
+.bloque, .card { padding: 16px 17px; margin-bottom: 13px; }
+
+.titulo {
+  margin: 0 0 13px;
+  font-size: 11.5px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
-  color: var(--texto-mudo);
+  color: var(--tenue);
 }
 
-.muted { color: var(--texto-mudo); margin: 0 0 16px; }
+.vacio { margin: 0; color: var(--mudo); font-size: 15px; }
+.vacio.mal { color: var(--mal); }
 
-.nota {
-  margin: 14px 0 0;
+.pie {
+  margin: 13px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--linea-suave);
+  font-size: 13.5px;
+  color: var(--tenue);
+}
+
+.cargando { margin: 30px 4px; color: var(--tenue); }
+
+/* ---------- bloque actual ---------- */
+
+.ahora {
+  position: relative;
+  overflow: hidden;
+  padding: 19px 19px 21px;
+  margin-bottom: 13px;
+}
+
+/* el filo de color de la izquierda dice de qué tipo es sin necesidad de leer */
+.ahora::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--acento, var(--ambar));
+}
+
+.ahora-et {
+  margin: 0 0 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--acento, var(--ambar));
+}
+
+.ahora-t {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.28;
+  letter-spacing: -0.015em;
+}
+
+.ahora-m { margin: 7px 0 0; color: var(--mudo); font-size: 14.5px; }
+
+.barra {
+  height: 3px;
+  margin-top: 16px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.barra i {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: var(--acento, var(--ambar));
+  opacity: 0.85;
+}
+
+/* ---------- agenda ---------- */
+
+.linea { position: relative; margin: 0; padding: 0 0 0 2px; list-style: none; }
+
+/* el riel vertical convierte una lista suelta en una línea de tiempo */
+.linea::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 51px;
+  width: 1px;
+  background: var(--linea);
+}
+
+.ev { position: relative; display: flex; gap: 16px; padding: 9px 0; }
+
+.ev-h {
+  flex: none;
+  width: 42px;
+  padding-top: 1px;
   font-size: 14px;
-  color: var(--texto-mudo);
+  font-variant-numeric: tabular-nums;
+  color: var(--mudo);
+  text-align: right;
 }
 
-.nota.error { color: var(--falla); }
+/* el punto sobre el riel */
+.ev::before {
+  content: "";
+  position: absolute;
+  top: 15px;
+  left: 46px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--fondo);
+  border-radius: 50%;
+  background: var(--acento, var(--t-otro));
+  z-index: 1;
+}
 
-/* ---------- botones ---------- */
+.ev-c { flex: 1; min-width: 0; padding-left: 12px; }
+.ev-t { margin: 0; font-size: 15.5px; line-height: 1.35; }
+.ev-m { margin: 3px 0 0; font-size: 13px; color: var(--tenue); }
+
+.ev.pasado { opacity: 0.42; }
+.ev.actual .ev-t { font-weight: 600; }
+.ev.actual::before { box-shadow: 0 0 0 4px rgba(232, 181, 99, 0.16); }
+
+/* ---------- color por tipo ---------- */
+
+.t-salud { --acento: var(--t-salud); }
+.t-tesis { --acento: var(--t-tesis); }
+.t-flexible { --acento: var(--t-flexible); }
+.t-profesional { --acento: var(--t-profesional); }
+.t-externo { --acento: var(--t-externo); }
+.t-otro { --acento: var(--t-otro); }
+
+/* ---------- requiere tu mirada ---------- */
+/* Sin checkboxes ni nada que sugiera cumplimiento: son cosas para mirar,
+   no tareas para tildar. */
+
+.mirada { margin: 0; padding: 0; list-style: none; }
+
+.mirada li {
+  padding: 11px 0;
+  border-top: 1px solid var(--linea-suave);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.mirada li:first-child { border-top: 0; padding-top: 0; }
+
+.orig {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(232, 181, 99, 0.12);
+  color: var(--ambar);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: 1.5px;
+}
+
+/* ---------- correo ---------- */
+
+.correo { margin: 0; padding: 0; list-style: none; }
+
+.correo li {
+  padding: 11px 0;
+  border-top: 1px solid var(--linea-suave);
+}
+
+.correo li:first-child { border-top: 0; padding-top: 0; }
+.correo li.masivo { opacity: 0.5; }
+
+.correo-h { display: flex; align-items: baseline; gap: 8px; }
+
+.de {
+  font-size: 14.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tag {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--linea);
+  border-radius: 5px;
+  font-size: 10.5px;
+  color: var(--tenue);
+  letter-spacing: 0.04em;
+}
+
+.asunto {
+  margin: 2px 0 0;
+  font-size: 14.5px;
+  color: var(--mudo);
+  line-height: 1.4;
+}
+
+/* ---------- login ---------- */
+
+.card h2 { margin: 0 0 9px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.muted { margin: 0 0 17px; color: var(--mudo); font-size: 15px; }
+.nota { margin: 14px 0 0; font-size: 13.5px; color: var(--mudo); }
+.nota.error { color: var(--mal); }
+
 .btn {
   display: block;
   width: 100%;
   padding: 15px 18px;
   border: 0;
-  border-radius: 11px;
-  background: var(--acento);
-  color: #1b1508;
+  border-radius: 12px;
+  background: var(--ambar);
+  color: #1c1608;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -93,93 +336,96 @@ body {
 }
 
 .btn:active { opacity: 0.82; }
-
-.btn[disabled] { opacity: 0.5; cursor: default; }
+.btn[disabled] { opacity: 0.5; }
 
 .btn-sec {
   background: transparent;
   border: 1px solid var(--linea);
-  color: var(--texto-mudo);
+  color: var(--mudo);
   font-weight: 500;
   padding: 12px 16px;
 }
 
-.acciones {
-  display: flex;
-  gap: 10px;
-  margin-top: 16px;
-}
+.acciones { display: flex; gap: 10px; margin-top: 16px; }
 
-/* ---------- lista de chequeos ---------- */
+/* ---------- diagnóstico ---------- */
+
 .chequeos { margin: 0; padding: 0; list-style: none; }
 
 .chequeos li {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  padding: 9px 0;
-  border-bottom: 1px solid var(--linea);
+  padding: 10px 0;
+  border-top: 1px solid var(--linea-suave);
+  font-size: 15px;
 }
 
-.chequeos li:last-child { border-bottom: 0; }
+.chequeos li:first-child { border-top: 0; padding-top: 0; }
+.chequeos .ico { width: 16px; flex: none; color: var(--tenue); }
+.chequeos li.ok .ico { color: var(--ok); }
+.chequeos li.mal .ico { color: var(--mal); }
+.chequeos .det { margin-left: auto; text-align: right; font-size: 13.5px; color: var(--tenue); }
+.chequeos li.mal .det { color: var(--mal); }
 
-.chequeos .ico { width: 18px; flex: none; color: var(--texto-mudo); }
-.chequeos li.ok  .ico { color: var(--ok); }
-.chequeos li.mal .ico { color: var(--falla); }
+/* ---------- navegación ---------- */
 
-.chequeos .txt { flex: none; }
-
-.chequeos .det {
-  margin-left: auto;
-  text-align: right;
-  font-size: 14px;
-  color: var(--texto-mudo);
-}
-
-.chequeos li.mal .det { color: var(--falla); }
-
-/* ---------- accesos a subsistemas ---------- */
 .sectores {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
   display: flex;
-  gap: 1px;
   padding-bottom: var(--safe-b);
-  background: var(--linea);
   border-top: 1px solid var(--linea);
+  background: rgba(12, 19, 16, 0.82);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
 .sector {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  padding: 11px 4px 13px;
-  background: var(--bg-card);
-  color: var(--texto-mudo);
-  font-size: 12.5px;
+  gap: 4px;
+  padding: 11px 3px 13px;
+  color: var(--tenue);
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
   text-decoration: none;
   -webkit-tap-highlight-color: transparent;
 }
 
-.sector:active { background: var(--bg); }
+.sector .emo { font-size: 20px; line-height: 1.05; opacity: 0.62; }
 
-.sector.activo { color: var(--acento); }
+.sector.activo { color: var(--texto); }
+.sector.activo .emo { opacity: 1; }
 
-.sector .emo { font-size: 21px; line-height: 1.1; }
+/* la marca de la pestaña activa va arriba, sobre el borde */
+.sector.activo::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 26px;
+  height: 2px;
+  border-radius: 0 0 3px 3px;
+  background: var(--ambar);
+}
 
-/* ---------- cartel de error ---------- */
+/* ---------- error visible ---------- */
 /* En el celular no hay consola: si algo revienta, tiene que verse acá. */
+
 .fatal {
   margin-bottom: 18px;
   padding: 13px 15px;
-  border: 1px solid var(--falla);
-  border-radius: var(--r);
-  background: #2a1a17;
-  color: var(--falla);
+  border: 1px solid var(--mal);
+  border-radius: 14px;
+  background: rgba(224, 138, 111, 0.09);
+  color: var(--mal);
   font-size: 14px;
   line-height: 1.45;
   word-break: break-word;

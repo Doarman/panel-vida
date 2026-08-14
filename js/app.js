@@ -1,5 +1,4 @@
-// Arranque de la app: reanuda la sesión, corre la prueba de conexión,
-// resuelve el ruteo y reporta el estado del entorno.
+// Arranque, ruteo y sesión. El contenido de cada pantalla vive en js/vistas/.
 //
 // Todo error se pinta en pantalla: en el celular no hay consola, y un error
 // silencioso ahí es indistinguible de "la app no hace nada".
@@ -14,11 +13,12 @@ import {
   yaOtorgado,
   ultimoMotivo,
 } from './auth.js';
-import { eventosDeHoy, correoParaMirar, leerEstado } from './api.js';
+import { render as renderHoy } from './vistas/hoy.js';
 
 const $ = (sel) => document.querySelector(sel);
+const main = $('#main');
 
-// ---------- reporte de errores ----------
+// ---------- errores visibles ----------
 
 function fatal(msg) {
   const el = $('#fatal');
@@ -29,17 +29,7 @@ function fatal(msg) {
 addEventListener('error', (e) => fatal(`Error: ${e.message}`));
 addEventListener('unhandledrejection', (e) => fatal(`Error: ${e.reason?.message || e.reason}`));
 
-// ---------- tarjetas de la pantalla Hoy ----------
-
-const cards = {
-  cargando: $('#card-cargando'),
-  login: $('#card-login'),
-  estado: $('#card-estado'),
-};
-
-function mostrarCard(cual) {
-  for (const [k, el] of Object.entries(cards)) el.classList.toggle('oculto', k !== cual);
-}
+// ---------- diagnóstico ----------
 
 function marcar(clave, estado, detalle) {
   const li = document.querySelector(`li[data-k="${clave}"]`);
@@ -50,48 +40,13 @@ function marcar(clave, estado, detalle) {
   li.querySelector('.det').textContent = detalle;
 }
 
-// ---------- prueba de conexión ----------
-
-async function chequear(clave, fn) {
-  marcar(clave, 'espera', 'consultando…');
-  try {
-    marcar(clave, 'ok', await fn());
-  } catch (e) {
-    marcar(clave, 'mal', e.message);
-  }
+function pulso(estado) {
+  $('#pulso').className = `pulso ${estado}`;
 }
-
-async function pruebaDeConexion() {
-  const btn = $('#btn-revisar');
-  btn.disabled = true;
-
-  await Promise.all([
-    chequear('calendar', async () => {
-      const ev = await eventosDeHoy();
-      return ev.length === 1 ? '1 evento hoy' : `${ev.length} eventos hoy`;
-    }),
-    chequear('gmail', async () => {
-      const { ids, estimado } = await correoParaMirar();
-      const n = ids.length || estimado;
-      return n === 1 ? '1 sin leer' : `${n} sin leer`;
-    }),
-    chequear('drive', async () => {
-      const est = await leerEstado();
-      const subs = Object.keys(est?.subsistemas || {}).length;
-      return `v${est?._meta?.version ?? '?'} · ${subs} subsistemas`;
-    }),
-  ]);
-
-  const min = Math.max(0, Math.round((venceEn() - Date.now()) / 60000));
-  $('#sesion-info').textContent = `Sesión válida por ${min} min. Después, un toque para reanudar.`;
-  btn.disabled = false;
-}
-
-// ---------- diagnóstico del entorno ----------
 
 let promptInstalar = null;
 
-function diagnosticar() {
+function diagnosticarEntorno() {
   const standalone =
     matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   marcar('modo', standalone ? 'ok' : 'espera', standalone ? 'instalada' : 'en el navegador');
@@ -112,7 +67,6 @@ function diagnosticar() {
 }
 
 // Chrome dispara esto solo si la app cumple TODOS los requisitos de instalación.
-// Si nunca llega, es que algo del manifest o del service worker no pasó.
 addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   promptInstalar = e;
@@ -133,6 +87,55 @@ $('#btn-instalar').addEventListener('click', async () => {
   $('#btn-instalar').classList.add('oculto');
 });
 
+// ---------- login ----------
+
+/**
+ * Reconectar tras un vencimiento no es lo mismo que entrar por primera vez:
+ * el consentimiento ya está dado, así que es un toque y no un login.
+ */
+function pintarLogin() {
+  const otorgado = yaOtorgado();
+  $('#login-titulo').textContent = otorgado ? 'La sesión venció' : 'Sin conexión con Google';
+  $('#login-texto').textContent = otorgado
+    ? 'Google entrega permisos por una hora y no permite renovarlos solo a una app sin servidor. Un toque y seguís: no vuelve a pedirte permisos.'
+    : 'El panel lee la agenda, el correo y los archivos de tu cuenta. No guarda nada en ningún servidor propio.';
+  $('#btn-conectar').textContent = otorgado ? 'Reanudar' : 'Conectar con Google';
+
+  main.textContent = '';
+  main.append($('#card-login'));
+  pulso('mal');
+}
+
+$('#btn-conectar').addEventListener('click', async (ev) => {
+  const btn = ev.currentTarget;
+  const err = $('#login-error');
+  btn.disabled = true;
+  err.classList.add('oculto');
+  try {
+    await conectar();
+    marcar('sesion', 'ok', ultimoMotivo());
+    location.hash = '#/hoy';
+    await rutear();
+  } catch (e) {
+    err.textContent = e.message;
+    err.classList.remove('oculto');
+    err.classList.add('error');
+    marcar('sesion', 'mal', e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('#btn-salir').addEventListener('click', async () => {
+  await salir();
+  marcar('sesion', 'espera', ultimoMotivo());
+  pintarLogin();
+});
+
+$('#btn-volver').addEventListener('click', () => {
+  location.hash = '#/hoy';
+});
+
 // ---------- ruteo ----------
 
 const SECTORES = {
@@ -143,28 +146,58 @@ const SECTORES = {
 
 function rutaActual() {
   const r = location.hash.replace(/^#\/?/, '');
-  return SECTORES[r] ? r : 'hoy';
+  if (SECTORES[r] || r === 'diagnostico') return r;
+  return 'hoy';
 }
 
-function rutear() {
-  const r = rutaActual();
-  const esHoy = r === 'hoy';
-
-  $('#p-hoy').classList.toggle('oculto', !esHoy);
-  $('#p-sector').classList.toggle('oculto', esHoy);
-
-  if (!esHoy) {
-    const [titulo, texto] = SECTORES[r];
-    $('#sector-titulo').textContent = titulo;
-    $('#sector-texto').textContent = texto;
-  }
-
+function marcarPestana(r) {
+  const activa = SECTORES[r] ? r : 'hoy';
   document
     .querySelectorAll('.sector')
-    .forEach((a) => a.classList.toggle('activo', a.dataset.r === r));
+    .forEach((a) => a.classList.toggle('activo', a.dataset.r === activa));
+}
+
+async function rutear() {
+  const r = rutaActual();
+  marcarPestana(r);
+  scrollTo(0, 0);
+
+  if (r === 'diagnostico') {
+    const min = Math.max(0, Math.round((venceEn() - Date.now()) / 60000));
+    $('#sesion-info').textContent = tokenVigente()
+      ? `Sesión válida por ${min} min. Después, un toque para reanudar.`
+      : 'Sin sesión activa.';
+    main.textContent = '';
+    main.append($('#card-diag'));
+    return;
+  }
+
+  if (!tokenVigente()) return pintarLogin();
+
+  if (SECTORES[r]) {
+    const [titulo, texto] = SECTORES[r];
+    main.textContent = '';
+    const s = document.createElement('section');
+    s.className = 'bloque';
+    const h = document.createElement('h2');
+    h.className = 'titulo';
+    h.textContent = titulo;
+    const p = document.createElement('p');
+    p.className = 'vacio';
+    p.textContent = texto;
+    s.append(h, p);
+    main.append(s);
+    return;
+  }
+
+  await renderHoy(main);
 }
 
 addEventListener('hashchange', rutear);
+
+$('#fecha').addEventListener('click', () => {
+  location.hash = location.hash === '#/diagnostico' ? '#/hoy' : '#/diagnostico';
+});
 
 // ---------- arranque ----------
 
@@ -179,86 +212,36 @@ function fechaDeHoy() {
   $('#fecha').textContent = f.charAt(0).toUpperCase() + f.slice(1);
 }
 
-async function entrar() {
-  mostrarCard('estado');
-  await pruebaDeConexion();
-}
-
-/**
- * Reconectar tras un vencimiento no es lo mismo que entrar por primera vez:
- * el consentimiento ya está dado, así que es un toque y no un login. La
- * pantalla tiene que decir eso, en vez de sugerir que perdiste la sesión.
- */
-function prepararLogin() {
-  const otorgado = yaOtorgado();
-  $('#login-titulo').textContent = otorgado ? 'La sesión venció' : 'Sin conexión con Google';
-  $('#login-texto').textContent = otorgado
-    ? 'Google entrega permisos por una hora y no permite renovarlos solo a una app sin servidor. Un toque y seguís: no vuelve a pedirte permisos.'
-    : 'El panel lee la agenda, el correo y los archivos de tu cuenta. No guarda nada en ningún servidor propio.';
-  $('#btn-conectar').textContent = otorgado ? 'Reanudar' : 'Conectar con Google';
-  mostrarCard('login');
-}
-
 async function arrancar() {
   fechaDeHoy();
-  rutear();
-  diagnosticar();
-  mostrarCard('cargando');
+  diagnosticarEntorno();
 
   try {
     await iniciar();
   } catch (e) {
-    prepararLogin();
+    marcar('sesion', 'mal', e.message);
+    pintarLogin();
     const p = $('#login-error');
     p.textContent = e.message;
     p.classList.remove('oculto');
     p.classList.add('error');
-    marcar('sesion', 'mal', e.message);
     return;
   }
 
   const ok = await reanudar();
   marcar('sesion', ok ? 'ok' : 'mal', ultimoMotivo());
+  pulso(ok ? 'ok' : 'mal');
 
-  if (ok) await entrar();
-  else prepararLogin();
+  await rutear();
 }
 
-$('#btn-conectar').addEventListener('click', async (ev) => {
-  const btn = ev.currentTarget;
-  const err = $('#login-error');
-  btn.disabled = true;
-  err.classList.add('oculto');
-  try {
-    await conectar();
-    marcar('sesion', 'ok', ultimoMotivo());
-    await entrar();
-  } catch (e) {
-    err.textContent = e.message;
-    err.classList.remove('oculto');
-    err.classList.add('error');
-    marcar('sesion', 'mal', e.message);
-  } finally {
-    btn.disabled = false;
-  }
-});
-
-$('#btn-revisar').addEventListener('click', pruebaDeConexion);
-
-$('#btn-salir').addEventListener('click', async () => {
-  await salir();
-  marcar('sesion', 'espera', ultimoMotivo());
-  prepararLogin();
-});
-
-// Al volver a la app después de un rato el token pudo vencer. Mejor ofrecer
-// el toque de reconexión que dejar que los tres chequeos fallen en cascada.
+// Al volver a la app después de un rato el token pudo vencer.
 addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
-  if (cards.estado.classList.contains('oculto')) return;
+  if (rutaActual() === 'diagnostico') return;
   if (tokenVigente()) return;
   marcar('sesion', 'mal', 'token vencido');
-  prepararLogin();
+  pintarLogin();
 });
 
 arrancar();
