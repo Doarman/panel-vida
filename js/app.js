@@ -175,6 +175,9 @@ function marcarPestana(r) {
 async function rutear() {
   const r = rutaActual();
   marcarPestana(r);
+  // Cada sección tiene su color; el CSS lo toma de acá. Además de dar vida,
+  // te dice dónde estás antes de leer nada.
+  document.body.dataset.seccion = r;
   scrollTo(0, 0);
 
   if (r === 'diagnostico') {

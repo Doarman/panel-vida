@@ -7,8 +7,9 @@
 import { CONFIG } from '../../config.js';
 import { eventosDeHoy, correoParaMirar, leerEstado } from '../api.js';
 import { mapaDeColores, clasificar, alertas } from '../contract.js';
-import { el, seccion, error as pintarError, cargando } from '../ui.js';
+import { el, seccion, error as pintarError, cargando, itemOmitible, pieOmitidos } from '../ui.js';
 import { conCache, antiguedad } from '../cache.js';
+import { estaOmitido, omitir, restaurarTodo } from '../omitidos.js';
 
 // ---------- helpers de tiempo ----------
 
@@ -107,25 +108,40 @@ function pintarAgenda(items, ahora) {
 // era decir dos veces lo mismo.
 const TOPE_MIRADA = 3;
 
-function pintarMirada(lista) {
+function pintarMirada(lista, refrescar) {
   if (!lista.length) return null;
+
+  const visibles = lista.filter((a) => !estaOmitido(`${a.origen}:${a.texto}`));
+  const ocultos = lista.length - visibles.length;
+
   const s = seccion('Requiere tu mirada');
   const ul = el('ul', 'mirada');
 
-  for (const a of lista.slice(0, TOPE_MIRADA)) {
-    const li = el('li');
-    li.append(el('span', 'orig', a.origen));
-    li.append(el('span', 'mirada-t', a.texto));
-    ul.append(li);
+  for (const a of visibles.slice(0, TOPE_MIRADA)) {
+    ul.append(
+      itemOmitible([el('span', 'orig', a.origen), el('span', 'mirada-t', a.texto)], () => {
+        omitir(`${a.origen}:${a.texto}`);
+        refrescar();
+      })
+    );
   }
-  s.append(ul);
 
-  const resto = lista.length - TOPE_MIRADA;
+  if (!visibles.length) s.append(el('p', 'vacio', 'Nada a la vista por hoy.'));
+  else s.append(ul);
+
+  const resto = visibles.length - TOPE_MIRADA;
   if (resto > 0) {
-    const a = el('a', 'enlace', `${resto} más en ${lista[TOPE_MIRADA].origen} →`);
-    a.href = `#/${lista[TOPE_MIRADA].origen}`;
+    const a = el('a', 'enlace', `${resto} más en ${visibles[TOPE_MIRADA].origen} →`);
+    a.href = `#/${visibles[TOPE_MIRADA].origen}`;
     s.append(a);
   }
+
+  const pie = pieOmitidos(ocultos, () => {
+    restaurarTodo();
+    refrescar();
+  });
+  if (pie) s.append(pie);
+
   return s;
 }
 
@@ -201,7 +217,7 @@ export async function render(main) {
   }
 
   if (estado) {
-    const m = pintarMirada(alertas(estado));
+    const m = pintarMirada(alertas(estado), () => render(main));
     if (m) main.append(m);
   }
 

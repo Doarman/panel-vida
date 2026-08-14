@@ -13,8 +13,9 @@
 import { leerEstado, leerJsonDeDrive } from '../api.js';
 import { subsistema } from '../contract.js';
 import { registrar, sincronizar, pendientes, subidos } from '../riegos.js';
-import { el, seccion, cargando } from '../ui.js';
+import { el, seccion, cargando, itemOmitible, pieOmitidos } from '../ui.js';
 import { conCache, antiguedad } from '../cache.js';
+import { estaOmitido, omitir, restaurarTodo } from '../omitidos.js';
 
 // ---------- helpers ----------
 
@@ -121,6 +122,14 @@ function totalMezcla(cultivo, fase) {
   return { n, vol, litros: min === max ? `${min} L` : `${min}–${max} L` };
 }
 
+const LITROS_CLAVE = 'pv.litros';
+
+/** 44, 11.5, 0.5 — sin decimales de más. */
+function cantidad(valor) {
+  const n = Math.round(valor * 10) / 10;
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
 function pintarMezcla(cultivo, fase) {
   if (!fase?.nutricion) return null;
 
@@ -130,31 +139,74 @@ function pintarMezcla(cultivo, fase) {
   dosis.sort((a, b) => posicionEnMezcla(cultivo, a.clave) - posicionEnMezcla(cultivo, b.clave));
 
   const s = seccion(`Mezcla · fase ${fase.id}`);
-
   const total = totalMezcla(cultivo, fase);
+
+  // Punto de partida: lo que dan las macetas de esta fase. Pero el que manda es
+  // el litro que prepares vos, así que se puede mover.
+  const sugerido = total
+    ? Math.round(total.n * ((fase.volumen_por_maceta_l[0] + fase.volumen_por_maceta_l[1]) / 2) * 2) / 2
+    : 20;
+
+  const guardado = Number(localStorage.getItem(LITROS_CLAVE));
+  const inicial = guardado > 0 ? guardado : sugerido;
+
+  const control = el('div', 'litros');
+  const salida = el('output', 'litros-v', `${cantidad(inicial)} L`);
+  control.append(salida);
+
+  const barra = el('input', 'litros-r');
+  barra.type = 'range';
+  barra.min = '1';
+  barra.max = String(Math.max(40, Math.ceil(inicial * 2)));
+  barra.step = '0.5';
+  barra.value = String(inicial);
+  barra.setAttribute('aria-label', 'Litros de mezcla');
+  control.append(barra);
+
   if (total) {
-    s.append(
-      el('p', 'mezcla-tot', `${total.n} macetas × ${rango(total.vol)} L  →  ${total.litros}`)
+    control.append(
+      el('p', 'litros-ref', `${total.n} macetas × ${rango(total.vol)} L  →  ${total.litros}`)
     );
   }
+  s.append(control);
 
+  // Cada producto muestra la cantidad total para esos litros, y la dosis
+  // original al lado como referencia.
   const ol = el('ol', 'mezcla');
+  const filas = [];
   for (const d of dosis) {
     const li = el('li');
+    const cant = el('span', 'mz-c');
     li.append(el('span', 'mz-n', nombreDe(d.clave)));
+    li.append(cant);
     li.append(el('span', 'mz-d', `${d.valor} ${d.unidad}`));
     ol.append(li);
+    filas.push({ d, cant });
   }
   s.append(ol);
+
+  const recalcular = () => {
+    const L = Number(barra.value);
+    salida.textContent = `${cantidad(L)} L`;
+    barra.style.setProperty('--pct', `${((L - 1) / (Number(barra.max) - 1)) * 100}%`);
+    for (const { d, cant } of filas) {
+      cant.textContent = `${cantidad(d.valor * L)} ${d.unidad.split('/')[0]}`;
+    }
+  };
+
+  barra.addEventListener('input', recalcular);
+  barra.addEventListener('change', () => {
+    try {
+      localStorage.setItem(LITROS_CLAVE, barra.value);
+    } catch {}
+  });
+  recalcular();
 
   for (const n of notas) s.append(el('p', 'mezcla-nota', n));
 
   // El orden importa de verdad: el silicio precipita si entra junto al CalMag.
   const orden = cultivo?.orden_de_mezcla || [];
-  if (orden.length) {
-    const p = el('p', 'pie', `Orden: ${orden.join(' → ')}`);
-    s.append(p);
-  }
+  if (orden.length) s.append(el('p', 'pie', `Orden: ${orden.join(' → ')}`));
 
   return s;
 }
@@ -246,39 +298,61 @@ function pintarPrevisto(fase) {
 }
 
 /** Pendientes con fecha límite y decisiones que esperan a Nico. */
-function pintarAbiertos(cultivo) {
+function pintarAbiertos(cultivo, refrescar) {
   const hoy = hoyISO();
-  const pend = (cultivo?.pendientes || []).filter((p) => p.estado !== 'hecho');
-  const dec = (cultivo?.decisiones_abiertas || []).filter((d) =>
-    /pendiente|confirmar/i.test(d.estado || '')
-  );
-  if (!pend.length && !dec.length) return null;
+
+  const items = [
+    ...(cultivo?.pendientes || [])
+      .filter((p) => p.estado !== 'hecho')
+      .sort((a, b) => String(a.fecha_limite).localeCompare(String(b.fecha_limite)))
+      .map((p) => ({
+        clave: `cultivo:${p.id || p.item}`,
+        titulo: p.item,
+        meta: [
+          p.fecha_limite ? `límite ${fecha(p.fecha_limite)} · ${cuando(p.fecha_limite)}` : null,
+          p.motivo,
+        ]
+          .filter(Boolean)
+          .join(' — '),
+        cerca: p.fecha_limite ? dias(hoy, p.fecha_limite) <= 21 : false,
+      })),
+    ...(cultivo?.decisiones_abiertas || [])
+      .filter((d) => /pendiente|confirmar/i.test(d.estado || ''))
+      .map((d) => ({
+        clave: `cultivo:${d.id || d.tema}`,
+        titulo: d.tema,
+        meta: d.estado + (d.decidir_antes_de ? ` · antes del ${fecha(d.decidir_antes_de)}` : ''),
+        cerca: false,
+      })),
+  ];
+
+  const visibles = items.filter((i) => !estaOmitido(i.clave));
+  const ocultos = items.length - visibles.length;
+  if (!items.length) return null;
 
   const s = seccion('Requiere tu mirada');
   const ul = el('ul', 'mirada');
 
-  for (const p of [...pend].sort((a, b) =>
-    String(a.fecha_limite).localeCompare(String(b.fecha_limite))
-  )) {
-    const li = el('li');
-    li.append(el('span', 'mirada-t', p.item));
-    const d = p.fecha_limite ? dias(hoy, p.fecha_limite) : null;
-    const meta = [];
-    if (p.fecha_limite) meta.push(`límite ${fecha(p.fecha_limite)} · ${cuando(p.fecha_limite)}`);
-    if (p.motivo) meta.push(p.motivo);
-    if (meta.length) li.append(el('small', null, meta.join(' — ')));
-    if (d != null && d <= 21) li.classList.add('cerca');
+  for (const i of visibles) {
+    const partes = [el('span', 'mirada-t', i.titulo)];
+    if (i.meta) partes.push(el('small', null, i.meta));
+    const li = itemOmitible(partes, () => {
+      omitir(i.clave);
+      refrescar();
+    });
+    if (i.cerca) li.classList.add('cerca');
     ul.append(li);
   }
 
-  for (const d of dec) {
-    const li = el('li');
-    li.append(el('span', 'mirada-t', d.tema));
-    li.append(el('small', null, d.estado + (d.decidir_antes_de ? ` · antes del ${fecha(d.decidir_antes_de)}` : '')));
-    ul.append(li);
-  }
+  if (!visibles.length) s.append(el('p', 'vacio', 'Nada a la vista por hoy.'));
+  else s.append(ul);
 
-  s.append(ul);
+  const pie = pieOmitidos(ocultos, () => {
+    restaurarTodo();
+    refrescar();
+  });
+  if (pie) s.append(pie);
+
   return s;
 }
 
@@ -479,7 +553,7 @@ export async function render(main) {
     pintarMezcla(cultivo, fase),
     pintarProyeccion(cultivo, sub?.resumen, ultimo),
     pintarPrevisto(fase),
-    pintarAbiertos(cultivo),
+    pintarAbiertos(cultivo, () => render(main)),
     pintarFormulario(fase, () => render(main)),
     pintarRegistros(yaSubidos, sinSubir),
     pintarReglas(cultivo),

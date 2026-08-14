@@ -42,6 +42,37 @@ export function badge(estado) {
   return b;
 }
 
+/**
+ * Item de una lista que se puede ocultar por hoy.
+ * El botón dice "ocultar", no "listo": la app no audita si lo hiciste.
+ */
+export function itemOmitible(contenido, alOcultar) {
+  const li = el('li', 'omitible');
+  const cuerpo = el('div', 'omitible-c');
+  for (const n of [].concat(contenido)) cuerpo.append(n);
+
+  const x = el('button', 'ocultar', '×');
+  x.type = 'button';
+  x.title = 'Ocultar por hoy';
+  x.setAttribute('aria-label', 'Ocultar por hoy');
+  x.addEventListener('click', () => {
+    li.classList.add('yendose');
+    setTimeout(alOcultar, 180);
+  });
+
+  li.append(cuerpo, x);
+  return li;
+}
+
+/** Pie para restaurar lo ocultado. Devuelve null si no hay nada oculto. */
+export function pieOmitidos(cuantos, alRestaurar) {
+  if (!cuantos) return null;
+  const b = el('button', 'enlace comoBoton', `${cuantos} oculto${cuantos > 1 ? 's' : ''} hoy · mostrar`);
+  b.type = 'button';
+  b.addEventListener('click', alRestaurar);
+  return b;
+}
+
 /** Fila etiqueta/valor, con un subtexto opcional. */
 export function fila(lista, k, v, sub) {
   const li = el('li');

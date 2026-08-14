@@ -16,6 +16,8 @@
   --linea-suave: rgba(255, 255, 255, 0.05);
 
   --acento: #79b8e8;
+  --luz: 121, 184, 232; /* el acento en RGB, para los degradés del fondo */
+  --luz2: 180, 155, 224;
   --alerta: #e8b563;
   --mal: #f0866e;
   --ok: #79b8e8;
@@ -46,10 +48,34 @@ body {
 
   /* la luz de arriba es lo que saca al fondo de ser un rectángulo plano */
   background:
-    radial-gradient(130% 58% at 50% -10%, rgba(121, 184, 232, 0.13), transparent 64%),
-    radial-gradient(80% 34% at 12% 2%, rgba(180, 155, 224, 0.06), transparent 72%),
+    radial-gradient(130% 58% at 50% -10%, rgba(var(--luz), 0.15), transparent 64%),
+    radial-gradient(85% 38% at 88% 6%, rgba(var(--luz2), 0.09), transparent 70%),
+    radial-gradient(70% 30% at 5% 30%, rgba(var(--luz), 0.045), transparent 75%),
     var(--fondo);
   background-attachment: fixed;
+}
+
+/* Una paleta por sección. El azul solo en las cuatro pantallas se volvía
+   monótono, y además el color sirve para saber dónde estás sin leer. */
+body[data-seccion="cultivo"] {
+  --acento: #e8b563;
+  --luz: 232, 181, 99;
+  --luz2: 224, 138, 111;
+  --ok: #e8b563;
+}
+
+body[data-seccion="academico"] {
+  --acento: #b49be0;
+  --luz: 180, 155, 224;
+  --luz2: 121, 184, 232;
+  --ok: #b49be0;
+}
+
+body[data-seccion="laboral"] {
+  --acento: #6fd3c7;
+  --luz: 111, 211, 199;
+  --luz2: 121, 184, 232;
+  --ok: #6fd3c7;
 }
 
 .oculto { display: none !important; }
@@ -138,7 +164,7 @@ body {
   transition: background 0.3s var(--curva), box-shadow 0.3s var(--curva);
 }
 
-.pulso.ok { background: var(--ok); box-shadow: 0 0 12px rgba(121, 184, 232, 0.55); }
+.pulso.ok { background: var(--ok); box-shadow: 0 0 12px rgba(var(--luz), 0.55); }
 .pulso.mal { background: var(--mal); box-shadow: 0 0 12px rgba(240, 134, 110, 0.5); }
 
 /* ---------- superficies ---------- */
@@ -287,7 +313,7 @@ body {
 
 .ev.pasado { opacity: 0.4; }
 .ev.actual .ev-t { font-weight: 600; }
-.ev.actual::before { box-shadow: 0 0 0 4px rgba(121, 184, 232, 0.18); }
+.ev.actual::before { box-shadow: 0 0 0 4px rgba(var(--luz), 0.18); }
 
 /* ---------- color por tipo ---------- */
 
@@ -314,6 +340,47 @@ body {
 
 .mirada small { display: block; margin-top: 3px; font-size: 13px; color: var(--tenue); line-height: 1.4; }
 .mirada li.cerca .mirada-t { color: var(--alerta); }
+
+/* ---------- ocultar por hoy ---------- */
+/* Es "ya lo vi", no "hecho": por eso una cruz y no un tilde, y por eso vuelve
+   mañana. Tachar cosas sería el sistema auditando la conducta. */
+
+.omitible { display: flex; align-items: flex-start; gap: 10px; }
+.omitible-c { flex: 1; min-width: 0; }
+
+.ocultar {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  margin: -4px -6px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--tenue);
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.18s var(--curva), background 0.18s var(--curva);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ocultar:active { color: var(--texto); background: rgba(255, 255, 255, 0.07); }
+
+.omitible.yendose {
+  opacity: 0;
+  transform: translateX(14px);
+  transition: opacity 0.18s var(--curva), transform 0.18s var(--curva);
+}
+
+.comoBoton {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
 
 .orig {
   display: inline-block;
@@ -429,15 +496,84 @@ body {
 /* ---------- mezcla ---------- */
 /* El dato que se mira parado frente al balde. Tabular y sin adornos. */
 
-.mezcla-tot {
-  margin: 0 0 14px;
-  padding: 10px 13px;
-  border-radius: 11px;
-  background: rgba(121, 184, 232, 0.09);
+/* Cuánto vas a preparar. Mover el punto recalcula todas las cantidades. */
+.litros {
+  margin: 0 0 16px;
+  padding: 14px 15px 16px;
+  border: 1px solid var(--linea);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(var(--luz), 0.1), rgba(var(--luz), 0.03));
+}
+
+.litros-v {
+  display: block;
+  font-size: 30px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.025em;
   color: var(--acento);
-  font-size: 14.5px;
+}
+
+.litros-ref {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--tenue);
   font-variant-numeric: tabular-nums;
 }
+
+.litros-r {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 26px;
+  margin: 6px 0 0;
+  background: none;
+  cursor: pointer;
+}
+
+/* el relleno hasta el punto se dibuja con --pct, que actualiza el JS */
+.litros-r::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 99px;
+  background: linear-gradient(
+    to right,
+    var(--acento) var(--pct, 50%),
+    rgba(255, 255, 255, 0.1) var(--pct, 50%)
+  );
+}
+
+.litros-r::-moz-range-track {
+  height: 4px;
+  border-radius: 99px;
+  background: linear-gradient(
+    to right,
+    var(--acento) var(--pct, 50%),
+    rgba(255, 255, 255, 0.1) var(--pct, 50%)
+  );
+}
+
+.litros-r::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -9px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--acento);
+  box-shadow: 0 0 0 5px rgba(var(--luz), 0.16), 0 3px 10px rgba(0, 0, 0, 0.4);
+  transition: transform 0.15s var(--curva);
+}
+
+.litros-r::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--acento);
+  box-shadow: 0 0 0 5px rgba(var(--luz), 0.16);
+}
+
+.litros-r:active::-webkit-slider-thumb { transform: scale(1.15); }
 
 .mezcla { margin: 0; padding: 0; list-style: none; counter-reset: paso; }
 
@@ -461,14 +597,26 @@ body {
   color: var(--tenue);
 }
 
-.mz-n { flex: 1; font-size: 15.5px; }
+.mz-n { flex: 1; min-width: 0; font-size: 15px; }
 
-.mz-d {
+/* la cantidad real para los litros elegidos: es lo que se mira */
+.mz-c {
   flex: none;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
+  color: var(--acento);
+}
+
+/* la dosis original, como referencia */
+.mz-d {
+  flex: none;
+  width: 62px;
+  text-align: right;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--tenue);
 }
 
 .mezcla-nota { margin: 11px 0 0; font-size: 13.5px; color: var(--alerta); }
@@ -504,7 +652,7 @@ body {
   white-space: nowrap;
 }
 
-.badge.vivo { border-color: rgba(121, 184, 232, 0.35); color: var(--acento); }
+.badge.vivo { border-color: rgba(var(--luz), 0.35); color: var(--acento); }
 .badge.atencion { border-color: rgba(232, 181, 99, 0.32); color: var(--alerta); }
 .badge.lejos { opacity: 0.7; }
 
@@ -537,7 +685,7 @@ body {
   background: var(--tenue);
 }
 
-.paso.vivo::before { background: var(--acento); box-shadow: 0 0 0 4px rgba(121, 184, 232, 0.16); }
+.paso.vivo::before { background: var(--acento); box-shadow: 0 0 0 4px rgba(var(--luz), 0.16); }
 .paso.atencion::before { background: var(--alerta); }
 .paso.lejos { opacity: 0.55; }
 
@@ -574,7 +722,7 @@ body {
 .campo textarea:focus {
   outline: none;
   border-color: var(--acento);
-  box-shadow: 0 0 0 3px rgba(121, 184, 232, 0.14);
+  box-shadow: 0 0 0 3px rgba(var(--luz), 0.14);
 }
 
 .registros { margin: 14px 0 0; padding: 0; list-style: none; }
