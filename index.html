@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Panel de Vida</title>
+<meta name="theme-color" content="#0f1714">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Panel">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/favicon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="stylesheet" href="./css/app.css">
+</head>
+<body>
+
+<header class="top">
+  <h1>Panel de Vida</h1>
+  <p class="fecha" id="fecha"></p>
+</header>
+
+<main id="main">
+  <!-- Estado inicial: mientras se intenta reanudar la sesión sin molestar. -->
+  <section class="card" id="card-cargando">
+    <p class="muted">Reanudando la sesión…</p>
+  </section>
+
+  <!-- Sin sesión activa. -->
+  <section class="card oculto" id="card-login">
+    <h2>Sin conexión con Google</h2>
+    <p class="muted">
+      El panel lee la agenda, el correo y los archivos de tu cuenta.
+      No guarda nada en ningún servidor propio.
+    </p>
+    <button class="btn" id="btn-conectar">Conectar con Google</button>
+    <p class="nota oculto" id="login-error"></p>
+  </section>
+
+  <!-- Con sesión activa: prueba de conexión de los tres orígenes de datos. -->
+  <section class="card oculto" id="card-estado">
+    <h2>Conexión</h2>
+    <ul class="chequeos" id="chequeos">
+      <li data-k="calendar"><span class="ico">·</span><span class="txt">Calendar</span><span class="det"></span></li>
+      <li data-k="gmail"><span class="ico">·</span><span class="txt">Gmail</span><span class="det"></span></li>
+      <li data-k="drive"><span class="ico">·</span><span class="txt">Drive · estado.json</span><span class="det"></span></li>
+    </ul>
+    <p class="nota" id="sesion-info"></p>
+    <div class="acciones">
+      <button class="btn btn-sec" id="btn-revisar">Revisar de nuevo</button>
+      <button class="btn btn-sec" id="btn-salir">Cerrar sesión</button>
+    </div>
+  </section>
+</main>
+
+<nav class="sectores" aria-label="Subsistemas">
+  <a class="sector" href="#/cultivo"><span class="emo">🌱</span>Cultivo</a>
+  <a class="sector" href="#/academico"><span class="emo">📕</span>Académico</a>
+  <a class="sector" href="#/laboral"><span class="emo">💼</span>Laboral</a>
+</nav>
+
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,171 @@
+/* Panel de Vida — hoja única, mobile-first.
+   Se usa con una mano y recién levantado: tipografía grande, contraste
+   suficiente pero no agresivo, nada de bordes duros ni acentos chillones. */
+
+:root {
+  --bg: #0f1714;
+  --bg-card: #16211c;
+  --linea: #24332c;
+  --texto: #e6ece8;
+  --texto-mudo: #8fa39a;
+  --acento: #e8b563;
+  --ok: #7fbf8f;
+  --falla: #d98b7a;
+
+  --r: 14px;
+  --gap: 14px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  padding: max(env(safe-area-inset-top), 18px) 18px calc(96px + var(--safe-b));
+  background: var(--bg);
+  color: var(--texto);
+  font: 400 17px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.oculto { display: none !important; }
+
+/* ---------- encabezado ---------- */
+.top { margin-bottom: 22px; }
+
+.top h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.fecha {
+  margin: 2px 0 0;
+  color: var(--texto-mudo);
+  font-size: 15px;
+  text-transform: capitalize;
+}
+
+/* ---------- tarjetas ---------- */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--linea);
+  border-radius: var(--r);
+  padding: 18px;
+  margin-bottom: var(--gap);
+}
+
+.card h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--texto-mudo);
+}
+
+.muted { color: var(--texto-mudo); margin: 0 0 16px; }
+
+.nota {
+  margin: 14px 0 0;
+  font-size: 14px;
+  color: var(--texto-mudo);
+}
+
+.nota.error { color: var(--falla); }
+
+/* ---------- botones ---------- */
+.btn {
+  display: block;
+  width: 100%;
+  padding: 15px 18px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--acento);
+  color: #1b1508;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn:active { opacity: 0.82; }
+
+.btn[disabled] { opacity: 0.5; cursor: default; }
+
+.btn-sec {
+  background: transparent;
+  border: 1px solid var(--linea);
+  color: var(--texto-mudo);
+  font-weight: 500;
+  padding: 12px 16px;
+}
+
+.acciones {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+/* ---------- lista de chequeos ---------- */
+.chequeos { margin: 0; padding: 0; list-style: none; }
+
+.chequeos li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--linea);
+}
+
+.chequeos li:last-child { border-bottom: 0; }
+
+.chequeos .ico { width: 18px; flex: none; color: var(--texto-mudo); }
+.chequeos li.ok  .ico { color: var(--ok); }
+.chequeos li.mal .ico { color: var(--falla); }
+
+.chequeos .txt { flex: none; }
+
+.chequeos .det {
+  margin-left: auto;
+  text-align: right;
+  font-size: 14px;
+  color: var(--texto-mudo);
+}
+
+.chequeos li.mal .det { color: var(--falla); }
+
+/* ---------- accesos a subsistemas ---------- */
+.sectores {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 1px;
+  padding-bottom: var(--safe-b);
+  background: var(--linea);
+  border-top: 1px solid var(--linea);
+}
+
+.sector {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 11px 4px 13px;
+  background: var(--bg-card);
+  color: var(--texto-mudo);
+  font-size: 12.5px;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sector:active { background: var(--bg); }
+
+.sector .emo { font-size: 21px; line-height: 1.1; }
