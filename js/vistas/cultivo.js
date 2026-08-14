@@ -103,6 +103,17 @@ function leerNutricion(nutricion) {
   return { dosis, notas };
 }
 
+/** Ficha del producto en cultivo.json, para poder mostrar su rol y su nota. */
+function infoProducto(cultivo, clave) {
+  const ps = cultivo?.productos || [];
+  return (
+    ps.find((p) => p.id === clave) ||
+    ps.find((p) => clave.startsWith(p.id)) ||
+    ps.find((p) => p.id.startsWith(clave)) ||
+    null
+  );
+}
+
 /** Posición del producto en el orden de mezcla, para no listarlo en cualquier orden. */
 function posicionEnMezcla(cultivo, clave) {
   const orden = cultivo?.orden_de_mezcla || [];
@@ -171,15 +182,33 @@ function pintarMezcla(cultivo, fase) {
   s.append(control);
 
   // Cada producto muestra la cantidad total para esos litros, y la dosis
-  // original al lado como referencia.
+  // original al lado como referencia. Tocando la fila se abre lo que
+  // cultivo.json sabe de ese producto: para qué es y su advertencia.
   const ol = el('ol', 'mezcla');
   const filas = [];
+
   for (const d of dosis) {
+    const info = infoProducto(cultivo, d.clave);
     const li = el('li');
+
+    const cabecera = el('div', 'mz-h');
     const cant = el('span', 'mz-c');
-    li.append(el('span', 'mz-n', nombreDe(d.clave)));
-    li.append(cant);
-    li.append(el('span', 'mz-d', `${d.valor} ${d.unidad}`));
+    cabecera.append(el('span', 'mz-n', nombreDe(d.clave)));
+    cabecera.append(cant);
+    cabecera.append(el('span', 'mz-d', `${d.valor} ${d.unidad}`));
+    li.append(cabecera);
+
+    const detalle = [info?.nombre, info?.rol && `Para: ${info.rol}`, info?.nota]
+      .filter(Boolean)
+      .join('\n');
+
+    if (detalle) {
+      li.classList.add('abrible');
+      const cuerpo = el('p', 'mz-info', detalle);
+      li.append(cuerpo);
+      cabecera.addEventListener('click', () => li.classList.toggle('abierta'));
+    }
+
     ol.append(li);
     filas.push({ d, cant });
   }
@@ -224,22 +253,52 @@ function pintarCiclo(ciclo, fase, diaDeCiclo, marca) {
   s.append(el('p', 'ciclo-d', partes.join(' · ')));
 
   if (fase) {
-    const dl = el('dl', 'params');
-    const campos = [
-      ['EC objetivo', rango(fase.ec_objetivo)],
-      ['pH entrada', rango(fase.ph_entrada)],
-      ['PPFD', fase.ppfd_techo ? `${fase.ppfd} · techo ${fase.ppfd_techo}` : (fase.ppfd ?? '—')],
-      ['Litros/maceta', rango(fase.volumen_por_maceta_l)],
-    ];
-    for (const [k, v] of campos) {
-      const d = el('div', 'param');
-      d.append(el('dt', null, k), el('dd', null, String(v)));
-      dl.append(d);
-    }
-    s.append(dl);
+    // Cuatro fichas parejas. Antes era una rejilla de tres columnas y la cuarta
+    // quedaba sola, con un hueco al lado.
+    s.append(
+      chips([
+        ['EC objetivo', rango(fase.ec_objetivo)],
+        ['pH entrada', rango(fase.ph_entrada)],
+        ['PPFD', fase.ppfd_techo ? `${fase.ppfd} / ${fase.ppfd_techo}` : (fase.ppfd ?? '—')],
+        ['Litros/maceta', rango(fase.volumen_por_maceta_l)],
+      ])
+    );
   }
 
   if (marca) s.append(el('p', 'marca', marca));
+  return s;
+}
+
+/** Fichas chicas de dato: etiqueta arriba, valor grande abajo. */
+function chips(items) {
+  const cont = el('div', 'chips');
+  for (const [k, v, u] of items) {
+    if (v == null || v === '—') continue;
+    const c = el('div', 'chip');
+    c.append(el('span', 'chip-k', k));
+    const val = el('span', 'chip-v', String(v));
+    if (u) val.append(el('i', null, u));
+    c.append(val);
+    cont.append(c);
+  }
+  return cont;
+}
+
+function pintarAmbiente(fase) {
+  const a = fase?.ambiente;
+  if (!a) return null;
+
+  const items = [
+    ['Con luz', rango(a.temp_luz_c), '°'],
+    ['Oscuridad', rango(a.temp_oscuridad_c), '°'],
+    ['Humedad', rango(a.hr_pct), '%'],
+    ['Diferencial', a.diferencial_c ? rango(a.diferencial_c) : null, '°'],
+  ].filter(([, v]) => v != null);
+
+  if (!items.length) return null;
+
+  const s = seccion('Ambiente');
+  s.append(chips(items));
   return s;
 }
 
@@ -551,6 +610,7 @@ export async function render(main) {
   const partes = [
     pintarCiclo(ciclo, fase, diaDeCiclo, marca),
     pintarMezcla(cultivo, fase),
+    pintarAmbiente(fase),
     pintarProyeccion(cultivo, sub?.resumen, ultimo),
     pintarPrevisto(fase),
     pintarAbiertos(cultivo, () => render(main)),

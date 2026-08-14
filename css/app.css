@@ -30,7 +30,7 @@
   --t-externo: #4a5567;
   --t-otro: #64748b;
 
-  --r: 18px;
+  --r: 24px;
   --safe-b: env(safe-area-inset-bottom, 0px);
   --curva: cubic-bezier(0.22, 0.72, 0.28, 1);
 }
@@ -441,28 +441,43 @@ body[data-seccion="laboral"] {
 
 .ciclo-d { margin: 6px 0 0; color: var(--mudo); font-size: 14.5px; }
 
-/* Rejilla de parámetros de la fase. Son referencia, no instrucción:
-   por eso van como dato al lado del campo y nunca precargados. */
-.params {
+/* Fichas de dato. Antes era una rejilla de columnas fijas y el último dato
+   quedaba solo, con un hueco al lado. Ahora fluyen y siempre quedan parejas. */
+.chips {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
-  gap: 1px;
-  margin-top: 18px;
-  border: 1px solid var(--linea-suave);
-  border-radius: 12px;
-  background: var(--linea-suave);
-  overflow: hidden;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 9px;
+  margin-top: 16px;
 }
 
-.param { padding: 11px 12px; background: rgba(10, 14, 22, 0.55); }
-.param dt { font-size: 10.5px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--tenue); }
-.param dd {
-  margin: 4px 0 0;
-  font-size: 16px;
+.chip {
+  padding: 11px 13px 12px;
+  border: 1px solid var(--linea-suave);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.028);
+}
+
+.chip-k {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--tenue);
+}
+
+.chip-v {
+  display: block;
+  margin-top: 4px;
+  font-size: 17px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
 }
+
+.chip-v i { font-style: normal; font-size: 13px; color: var(--mudo); }
+
+/* fuera de una tarjeta las fichas no necesitan margen de arranque */
+.bloque > .chips { margin-top: 0; }
 
 .proy { margin: 0; padding: 0; list-style: none; }
 
@@ -498,11 +513,11 @@ body[data-seccion="laboral"] {
 
 /* Cuánto vas a preparar. Mover el punto recalcula todas las cantidades. */
 .litros {
-  margin: 0 0 16px;
-  padding: 14px 15px 16px;
+  margin: 0 0 14px;
+  padding: 16px 18px 18px;
   border: 1px solid var(--linea);
-  border-radius: 14px;
-  background: linear-gradient(180deg, rgba(var(--luz), 0.1), rgba(var(--luz), 0.03));
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(var(--luz), 0.11), rgba(var(--luz), 0.03));
 }
 
 .litros-v {
@@ -575,26 +590,57 @@ body[data-seccion="laboral"] {
 
 .litros-r:active::-webkit-slider-thumb { transform: scale(1.15); }
 
+/* Filas como piezas redondeadas, no como renglones separados por líneas.
+   Tocando una se abre lo que cultivo.json sabe de ese producto. */
 .mezcla { margin: 0; padding: 0; list-style: none; counter-reset: paso; }
 
 .mezcla li {
+  margin-bottom: 6px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  counter-increment: paso;
+  transition: background 0.2s var(--curva), border-color 0.2s var(--curva);
+}
+
+.mz-h {
   display: flex;
   align-items: baseline;
   gap: 12px;
-  padding: 11px 0;
-  border-top: 1px solid var(--linea-suave);
-  counter-increment: paso;
+  padding: 13px 15px;
 }
 
-.mezcla li:first-child { border-top: 0; padding-top: 0; }
-
-.mezcla li::before {
+.mz-h::before {
   content: counter(paso);
   flex: none;
-  width: 18px;
-  font-size: 12px;
+  width: 13px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
   color: var(--tenue);
+}
+
+.mezcla li.abrible .mz-h { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.mezcla li.abrible:active { background: rgba(255, 255, 255, 0.06); }
+.mezcla li.abierta { border-color: rgba(var(--luz), 0.28); background: rgba(var(--luz), 0.06); }
+
+/* el detalle se despliega con una transición de alto, no de golpe */
+.mz-info {
+  margin: 0;
+  padding: 0 15px;
+  max-height: 0;
+  overflow: hidden;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--mudo);
+  white-space: pre-line;
+  opacity: 0;
+  transition: max-height 0.3s var(--curva), opacity 0.25s var(--curva), padding 0.3s var(--curva);
+}
+
+.mezcla li.abierta .mz-info {
+  max-height: 260px;
+  padding: 0 15px 14px;
+  opacity: 1;
 }
 
 .mz-n { flex: 1; min-width: 0; font-size: 15px; }
@@ -705,9 +751,9 @@ body[data-seccion="laboral"] {
 .campo select,
 .campo textarea {
   width: 100%;
-  padding: 12px 13px;
+  padding: 13px 15px;
   border: 1px solid var(--linea);
-  border-radius: 11px;
+  border-radius: 15px;
   background: rgba(10, 14, 22, 0.6);
   color: var(--texto);
   font: inherit;
@@ -752,7 +798,7 @@ body[data-seccion="laboral"] {
   width: 100%;
   padding: 15px 18px;
   border: 0;
-  border-radius: 12px;
+  border-radius: 16px;
   background: var(--acento);
   color: #08131d;
   font: inherit;
