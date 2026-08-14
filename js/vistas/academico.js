@@ -6,10 +6,11 @@
 import { leerEstado } from '../api.js';
 import { subsistema } from '../contract.js';
 import { el, seccion, error, cargando, badge } from '../ui.js';
+import { conCache } from '../cache.js';
 
 function pintarTesis(t) {
   if (!t) return null;
-  const s = el('section', 'ciclo bloque');
+  const s = el('section', 'ciclo tarjeta');
   s.append(el('p', 'ciclo-n', 'Tesis'));
   s.append(el('h3', 'ciclo-f', t.estado || 'Sin estado'));
 
@@ -70,7 +71,7 @@ export async function render(main) {
 
   let estado;
   try {
-    estado = await leerEstado();
+    estado = (await conCache('estado', leerEstado)).datos;
   } catch (e) {
     main.textContent = '';
     main.append(error('📕 Académico', e));

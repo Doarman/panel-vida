@@ -5,11 +5,16 @@
 // planta; una app que dice "hoy regás" repite ese error con más autoridad.
 // Por eso: "Riego proyectado", los rangos de la fase van como referencia al
 // lado del campo y nunca precargados, y no hay un solo checkbox.
+//
+// Las dosis sí van completas y al frente: son el dato que se usa parado
+// frente a la mezcla, y no saberlas de memoria no es una decisión, es una
+// molestia.
 
 import { leerEstado, leerJsonDeDrive } from '../api.js';
-import { subsistema, alertas } from '../contract.js';
+import { subsistema } from '../contract.js';
 import { registrar, sincronizar, pendientes, subidos } from '../riegos.js';
 import { el, seccion, cargando } from '../ui.js';
+import { conCache, antiguedad } from '../cache.js';
 
 // ---------- helpers ----------
 
@@ -34,7 +39,7 @@ const fmtFecha = new Intl.DateTimeFormat('es-AR', {
   timeZone: 'UTC',
 });
 
-/** "hoy", "mañana", "en 4 días", "hace 2 días" — más legible que una fecha. */
+/** "hoy", "mañana", "en 4 días" — más legible que una fecha suelta. */
 function cuando(iso) {
   const d = dias(hoyISO(), iso);
   if (d === null) return iso;
@@ -49,12 +54,115 @@ function fecha(iso) {
   return Number.isNaN(t) ? iso : fmtFecha.format(new Date(t));
 }
 
-const rango = (r) => (Array.isArray(r) && r.length === 2 ? `${r[0]}–${r[1]}` : r ?? '—');
+const rango = (r) => (Array.isArray(r) && r.length === 2 ? `${r[0]}–${r[1]}` : (r ?? '—'));
+
+// ---------- nutrición ----------
+
+// Nombres cortos para la pantalla. El nombre comercial completo está en
+// cultivo.json y no entra en el ancho de un celular. Lo que no esté acá cae
+// en una versión legible de la clave, así un producto nuevo igual se muestra.
+const NOMBRES = {
+  rhino_skin: 'Rhino Skin',
+  calmag: 'CalMag',
+  grow: 'Grow',
+  hybrids: 'Hybrids',
+  pure_zym: 'Pure Zym',
+  vitamax: 'Vitamax',
+  flora_booster: 'Flora Booster',
+  pk_booster: 'PK Booster',
+  trico_mas: 'Trico+',
+};
+
+const nombreDe = (clave) =>
+  NOMBRES[clave] || clave.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+
+/**
+ * Separa el bloque `nutricion` en dosis y notas.
+ * Las claves de dosis terminan en _ml_l o _g_l; el resto son aclaraciones
+ * (una aplicación numerada, un producto que sale, una nota suelta).
+ */
+function leerNutricion(nutricion) {
+  const dosis = [];
+  const notas = [];
+
+  for (const [k, v] of Object.entries(nutricion || {})) {
+    const m = k.match(/^(.+?)_(ml|g)_l$/);
+
+    if (m && typeof v === 'number') {
+      dosis.push({ clave: m[1], valor: v, unidad: `${m[2]}/L` });
+    } else if (m && v === null) {
+      notas.push(`${nombreDe(m[1])}: no entra en esta fase`);
+    } else if (k.endsWith('_aplicacion') && typeof v === 'number') {
+      notas.push(`${nombreDe(k.replace(/_aplicacion$/, ''))}: aplicación ${v}`);
+    } else if (typeof v === 'string') {
+      notas.push(`${nombreDe(k)}: ${v}`);
+    }
+  }
+
+  return { dosis, notas };
+}
+
+/** Posición del producto en el orden de mezcla, para no listarlo en cualquier orden. */
+function posicionEnMezcla(cultivo, clave) {
+  const orden = cultivo?.orden_de_mezcla || [];
+  const token = clave.split('_')[0];
+  const i = orden.findIndex((paso) => paso.toLowerCase().includes(token));
+  return i === -1 ? 99 : i;
+}
+
+/** Litros totales de la tanda: cuántas macetas por cuántos litros cada una. */
+function totalMezcla(cultivo, fase) {
+  const grupo = (cultivo?.grupos || []).find((g) => g.id === cultivo?.ciclo_activo?.grupo);
+  const n = grupo?.cantidad_plantas;
+  const vol = fase?.volumen_por_maceta_l;
+  if (!n || !Array.isArray(vol)) return null;
+  const min = +(n * vol[0]).toFixed(1);
+  const max = +(n * vol[1]).toFixed(1);
+  return { n, vol, litros: min === max ? `${min} L` : `${min}–${max} L` };
+}
+
+function pintarMezcla(cultivo, fase) {
+  if (!fase?.nutricion) return null;
+
+  const { dosis, notas } = leerNutricion(fase.nutricion);
+  if (!dosis.length) return null;
+
+  dosis.sort((a, b) => posicionEnMezcla(cultivo, a.clave) - posicionEnMezcla(cultivo, b.clave));
+
+  const s = seccion(`Mezcla · fase ${fase.id}`);
+
+  const total = totalMezcla(cultivo, fase);
+  if (total) {
+    s.append(
+      el('p', 'mezcla-tot', `${total.n} macetas × ${rango(total.vol)} L  →  ${total.litros}`)
+    );
+  }
+
+  const ol = el('ol', 'mezcla');
+  for (const d of dosis) {
+    const li = el('li');
+    li.append(el('span', 'mz-n', nombreDe(d.clave)));
+    li.append(el('span', 'mz-d', `${d.valor} ${d.unidad}`));
+    ol.append(li);
+  }
+  s.append(ol);
+
+  for (const n of notas) s.append(el('p', 'mezcla-nota', n));
+
+  // El orden importa de verdad: el silicio precipita si entra junto al CalMag.
+  const orden = cultivo?.orden_de_mezcla || [];
+  if (orden.length) {
+    const p = el('p', 'pie', `Orden: ${orden.join(' → ')}`);
+    s.append(p);
+  }
+
+  return s;
+}
 
 // ---------- secciones ----------
 
-function pintarCiclo(ciclo, fase, diaDeCiclo) {
-  const s = el('section', 'ciclo bloque');
+function pintarCiclo(ciclo, fase, diaDeCiclo, marca) {
+  const s = el('section', 'ciclo tarjeta');
   s.append(el('p', 'ciclo-n', ciclo?.nombre || 'Ciclo activo'));
   s.append(el('h3', 'ciclo-f', fase ? fase.nombre : 'Entre fases'));
 
@@ -79,6 +187,7 @@ function pintarCiclo(ciclo, fase, diaDeCiclo) {
     s.append(dl);
   }
 
+  if (marca) s.append(el('p', 'marca', marca));
   return s;
 }
 
@@ -126,19 +235,55 @@ function pintarProyeccion(cultivo, resumen, ultimoRiego) {
   return s;
 }
 
-function pintarMirada(lista) {
-  if (!lista.length) return null;
+function pintarPrevisto(fase) {
+  const acciones = fase?.acciones || [];
+  if (!acciones.length) return null;
+  const s = seccion('Previsto en esta fase');
+  const ul = el('ul', 'mirada');
+  for (const a of acciones) ul.append(el('li', null, a));
+  s.append(ul);
+  return s;
+}
+
+/** Pendientes con fecha límite y decisiones que esperan a Nico. */
+function pintarAbiertos(cultivo) {
+  const hoy = hoyISO();
+  const pend = (cultivo?.pendientes || []).filter((p) => p.estado !== 'hecho');
+  const dec = (cultivo?.decisiones_abiertas || []).filter((d) =>
+    /pendiente|confirmar/i.test(d.estado || '')
+  );
+  if (!pend.length && !dec.length) return null;
+
   const s = seccion('Requiere tu mirada');
   const ul = el('ul', 'mirada');
-  for (const a of lista) ul.append(el('li', null, a.texto ?? a));
+
+  for (const p of [...pend].sort((a, b) =>
+    String(a.fecha_limite).localeCompare(String(b.fecha_limite))
+  )) {
+    const li = el('li');
+    li.append(el('span', 'mirada-t', p.item));
+    const d = p.fecha_limite ? dias(hoy, p.fecha_limite) : null;
+    const meta = [];
+    if (p.fecha_limite) meta.push(`límite ${fecha(p.fecha_limite)} · ${cuando(p.fecha_limite)}`);
+    if (p.motivo) meta.push(p.motivo);
+    if (meta.length) li.append(el('small', null, meta.join(' — ')));
+    if (d != null && d <= 21) li.classList.add('cerca');
+    ul.append(li);
+  }
+
+  for (const d of dec) {
+    const li = el('li');
+    li.append(el('span', 'mirada-t', d.tema));
+    li.append(el('small', null, d.estado + (d.decidir_antes_de ? ` · antes del ${fecha(d.decidir_antes_de)}` : '')));
+    ul.append(li);
+  }
+
   s.append(ul);
   return s;
 }
 
 function pintarReglas(cultivo) {
-  const criticas = (cultivo?.reglas_no_negociables || []).filter(
-    (r) => r.criticidad === 'maxima'
-  );
+  const criticas = (cultivo?.reglas_no_negociables || []).filter((r) => r.criticidad === 'maxima');
   if (!criticas.length) return null;
 
   const s = seccion('No negociables');
@@ -195,7 +340,7 @@ function pintarFormulario(fase, alRegistrar) {
 
   // Los rangos de la fase van como referencia al lado del campo, nunca
   // precargados: vos medís y cargás lo que medís.
-  const fEc = input('r-ec', 'number', { step: '0.01', inputMode: 'decimal', placeholder: '' });
+  const fEc = input('r-ec', 'number', { step: '0.01', inputMode: 'decimal' });
   campo('', 'EC medida', fase ? `obj. ${rango(fase.ec_objetivo)}` : '', fEc);
 
   const fPh = input('r-ph', 'number', { step: '0.1', inputMode: 'decimal' });
@@ -218,7 +363,6 @@ function pintarFormulario(fase, alRegistrar) {
   boton.type = 'submit';
 
   const aviso = el('p', 'nota oculto');
-
   form.append(campos, boton, aviso);
 
   form.addEventListener('submit', async (ev) => {
@@ -227,7 +371,7 @@ function pintarFormulario(fase, alRegistrar) {
     aviso.classList.add('oculto');
 
     const num = (v) => (v === '' ? null : Number(v));
-    const riego = {
+    const res = await registrar({
       fecha: fFecha.value,
       tipo: fTipo.value,
       ec: num(fEc.value),
@@ -235,13 +379,11 @@ function pintarFormulario(fase, alRegistrar) {
       ppfd: num(fPpfd.value),
       observacion: fObs.value.trim() || null,
       fase: fase?.id || null,
-    };
-
-    const res = await registrar(riego);
+    });
 
     aviso.textContent = res.subido
       ? 'Registrado y guardado en Drive.'
-      : `Guardado en el teléfono. Sube solo cuando haya conexión (${res.error}).`;
+      : 'Guardado en el teléfono. Sube solo en cuanto haya conexión.';
     aviso.classList.remove('oculto', 'error', 'bien');
     aviso.classList.add(res.subido ? 'bien' : 'error');
 
@@ -287,12 +429,20 @@ export async function render(main) {
   const aviso = cargando('Leyendo el cultivo…');
   main.append(aviso);
 
-  let estado, cultivo;
+  let estado, cultivo, marca = null;
   try {
-    estado = await leerEstado();
+    const e = await conCache('estado', leerEstado);
+    estado = e.datos;
+
     const sub = subsistema(estado, 'cultivo');
     if (!sub?.archivoId) throw new Error('estado.json no apunta a ningún archivo de cultivo');
-    cultivo = await leerJsonDeDrive(sub.archivoId);
+
+    const c = await conCache('cultivo', () => leerJsonDeDrive(sub.archivoId));
+    cultivo = c.datos;
+
+    // Si algo salió de la copia local, hay que decirlo: un dato viejo sin
+    // fecha es peor que no tener dato.
+    if (!e.fresco || !c.fresco) marca = `Copia local · ${antiguedad(Math.min(e.ts, c.ts))}`;
   } catch (e) {
     aviso.remove();
     const s = seccion('🌱 Cultivo');
@@ -301,13 +451,12 @@ export async function render(main) {
     return;
   }
 
-  // Lo que ya subimos y lo que quedó en el teléfono sin conexión.
   let yaSubidos = [];
   try {
     await sincronizar();
     yaSubidos = await subidos();
   } catch {
-    /* sin red: se muestran solo los pendientes locales */
+    /* sin red o sin sesión: se muestran solo los pendientes locales */
   }
   const sinSubir = pendientes();
 
@@ -325,17 +474,16 @@ export async function render(main) {
     sub?.resumen?.ultimo_riego ||
     null;
 
-  main.append(pintarCiclo(ciclo, fase, diaDeCiclo));
-  main.append(pintarProyeccion(cultivo, sub?.resumen, ultimo));
+  const partes = [
+    pintarCiclo(ciclo, fase, diaDeCiclo, marca),
+    pintarMezcla(cultivo, fase),
+    pintarProyeccion(cultivo, sub?.resumen, ultimo),
+    pintarPrevisto(fase),
+    pintarAbiertos(cultivo),
+    pintarFormulario(fase, () => render(main)),
+    pintarRegistros(yaSubidos, sinSubir),
+    pintarReglas(cultivo),
+  ];
 
-  const mirada = pintarMirada(alertas(estado).filter((a) => a.origen === 'cultivo'));
-  if (mirada) main.append(mirada);
-
-  main.append(pintarFormulario(fase, () => render(main)));
-
-  const regs = pintarRegistros(yaSubidos, sinSubir);
-  if (regs) main.append(regs);
-
-  const reglas = pintarReglas(cultivo);
-  if (reglas) main.append(reglas);
+  for (const p of partes) if (p) main.append(p);
 }

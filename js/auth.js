@@ -194,6 +194,46 @@ export async function conectar() {
   return t;
 }
 
+/**
+ * Renueva en cuanto toques cualquier parte de la pantalla.
+ *
+ * El popup que abre Google solo lo permite el navegador si hay un gesto
+ * reciente del usuario. Al abrir la app no hay ninguno, y por eso el intento
+ * automático se bloquea. Pero el primer toque —en una pestaña, en el scroll,
+ * donde sea— alcanza: ahí sí se puede pedir el token y, como el consentimiento
+ * ya está dado, se resuelve sin mostrar nada.
+ *
+ * O sea: en vez de pedirte que toques un botón que dice "Reanudar", usamos el
+ * toque que ibas a hacer igual.
+ */
+let armado = false;
+
+export function renovarAlPrimerGesto(avisar) {
+  if (armado || !yaOtorgado()) return;
+  armado = true;
+
+  const quitar = () => {
+    armado = false;
+    removeEventListener('pointerdown', alTocar, true);
+    removeEventListener('keydown', alTocar, true);
+  };
+
+  async function alTocar() {
+    quitar();
+    try {
+      await pedirToken();
+      motivo = 'renovado con el primer toque';
+      avisar(true);
+    } catch (e) {
+      motivo = `no se pudo renovar (${e.message})`;
+      avisar(false);
+    }
+  }
+
+  addEventListener('pointerdown', alTocar, true);
+  addEventListener('keydown', alTocar, true);
+}
+
 export async function salir() {
   const t = tokenVigente();
   token = null;

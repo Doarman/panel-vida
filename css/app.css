@@ -143,24 +143,47 @@ body {
 
 /* ---------- superficies ---------- */
 
-.bloque, .ahora, .card {
+/* Solo lo que es "objeto" lleva caja: el bloque actual, el ciclo, el login.
+   Las listas se separan con aire y jerarquía tipográfica. Encajonar todo hacía
+   que la pantalla fuera una pila de rectángulos iguales. */
+.tarjeta, .ahora, .card {
   border: 1px solid var(--linea);
   border-radius: var(--r);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.013));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.014));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    0 16px 36px -26px rgba(0, 0, 0, 0.95);
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 18px 40px -28px rgba(0, 0, 0, 0.95);
 }
 
-.bloque, .card { padding: 16px 17px; margin-bottom: 13px; }
+.tarjeta, .card { padding: 18px 18px; margin-bottom: 14px; }
+
+/* sección sin caja: aire arriba y abajo, y el título como única separación */
+.bloque { padding: 0 4px; margin: 0 0 28px; }
 
 .titulo {
-  margin: 0 0 13px;
-  font-size: 11.5px;
+  margin: 0 0 12px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--tenue);
+}
+
+.marca {
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  color: var(--alerta);
+}
+
+.marca.suelta { margin: 0 4px 18px; }
+
+.enlace {
+  display: inline-block;
+  margin-top: 12px;
+  color: var(--acento);
+  font-size: 14px;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .vacio { margin: 0; color: var(--mudo); font-size: 15px; line-height: 1.5; }
@@ -289,6 +312,9 @@ body {
 
 .mirada li:first-child { border-top: 0; padding-top: 0; }
 
+.mirada small { display: block; margin-top: 3px; font-size: 13px; color: var(--tenue); line-height: 1.4; }
+.mirada li.cerca .mirada-t { color: var(--alerta); }
+
 .orig {
   display: inline-block;
   margin-right: 8px;
@@ -399,6 +425,53 @@ body {
 
 .reglas li:first-child { border-top: 0; padding-top: 0; }
 .reglas b { color: var(--texto); font-weight: 600; }
+
+/* ---------- mezcla ---------- */
+/* El dato que se mira parado frente al balde. Tabular y sin adornos. */
+
+.mezcla-tot {
+  margin: 0 0 14px;
+  padding: 10px 13px;
+  border-radius: 11px;
+  background: rgba(121, 184, 232, 0.09);
+  color: var(--acento);
+  font-size: 14.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mezcla { margin: 0; padding: 0; list-style: none; counter-reset: paso; }
+
+.mezcla li {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 11px 0;
+  border-top: 1px solid var(--linea-suave);
+  counter-increment: paso;
+}
+
+.mezcla li:first-child { border-top: 0; padding-top: 0; }
+
+.mezcla li::before {
+  content: counter(paso);
+  flex: none;
+  width: 18px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--tenue);
+}
+
+.mz-n { flex: 1; font-size: 15.5px; }
+
+.mz-d {
+  flex: none;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.mezcla-nota { margin: 11px 0 0; font-size: 13.5px; color: var(--alerta); }
 
 /* ---------- fichas (proyectos, formación) ---------- */
 

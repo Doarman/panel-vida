@@ -8,6 +8,7 @@ import { CONFIG } from '../../config.js';
 import { eventosDeHoy, correoParaMirar, leerEstado } from '../api.js';
 import { mapaDeColores, clasificar, alertas } from '../contract.js';
 import { el, seccion, error as pintarError, cargando } from '../ui.js';
+import { conCache, antiguedad } from '../cache.js';
 
 // ---------- helpers de tiempo ----------
 
@@ -101,17 +102,30 @@ function pintarAgenda(items, ahora) {
   return s;
 }
 
+// Hoy es un vistazo, no el detalle: se muestran unas pocas y el resto vive en
+// la sección de cada subsistema. Repetir la lista entera en las dos pantallas
+// era decir dos veces lo mismo.
+const TOPE_MIRADA = 3;
+
 function pintarMirada(lista) {
   if (!lista.length) return null;
   const s = seccion('Requiere tu mirada');
   const ul = el('ul', 'mirada');
-  for (const a of lista) {
+
+  for (const a of lista.slice(0, TOPE_MIRADA)) {
     const li = el('li');
     li.append(el('span', 'orig', a.origen));
     li.append(el('span', 'mirada-t', a.texto));
     ul.append(li);
   }
   s.append(ul);
+
+  const resto = lista.length - TOPE_MIRADA;
+  if (resto > 0) {
+    const a = el('a', 'enlace', `${resto} más en ${lista[TOPE_MIRADA].origen} →`);
+    a.href = `#/${lista[TOPE_MIRADA].origen}`;
+    s.append(a);
+  }
   return s;
 }
 
@@ -150,21 +164,31 @@ export async function render(main) {
 
   const ahora = new Date();
 
-  // Las tres fuentes en paralelo y tolerando fallas por separado:
-  // que Gmail se caiga no tiene por qué llevarse puesta la agenda.
+  // Las tres fuentes en paralelo y tolerando fallas por separado: que Gmail se
+  // caiga no tiene por qué llevarse puesta la agenda. Cada una cae a su copia
+  // local si la red o la sesión no responden.
   const [evRes, mailRes, estRes] = await Promise.allSettled([
-    eventosDeHoy(),
-    correoParaMirar(),
-    leerEstado(),
+    conCache('eventos', eventosDeHoy),
+    conCache('correo', correoParaMirar),
+    conCache('estado', leerEstado),
   ]);
 
   aviso.remove();
 
-  const estado = estRes.status === 'fulfilled' ? estRes.value : null;
+  // Si algo salió de la copia local hay que decirlo: un dato viejo sin fecha
+  // es peor que no tener dato.
+  const viejos = [evRes, mailRes, estRes]
+    .filter((r) => r.status === 'fulfilled' && !r.value.fresco)
+    .map((r) => r.value.ts);
+  if (viejos.length) {
+    main.append(el('p', 'marca suelta', `Copia local · ${antiguedad(Math.min(...viejos))}`));
+  }
+
+  const estado = estRes.status === 'fulfilled' ? estRes.value.datos : null;
   const mapa = mapaDeColores(estado);
 
   if (evRes.status === 'fulfilled') {
-    const items = evRes.value
+    const items = evRes.value.datos
       .map(normalizar)
       .map((i) => ({ ...i, clase: clasificar(i.ev, mapa) }))
       .sort((a, b) => a.inicio - b.inicio);
@@ -183,7 +207,7 @@ export async function render(main) {
 
   main.append(
     mailRes.status === 'fulfilled'
-      ? pintarCorreo(mailRes.value)
+      ? pintarCorreo(mailRes.value.datos)
       : pintarError('Correo', mailRes.reason)
   );
 }

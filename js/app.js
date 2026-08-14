@@ -12,6 +12,7 @@ import {
   venceEn,
   yaOtorgado,
   ultimoMotivo,
+  renovarAlPrimerGesto,
 } from './auth.js';
 import { render as renderHoy } from './vistas/hoy.js';
 import { render as renderCultivo } from './vistas/cultivo.js';
@@ -45,6 +46,16 @@ function marcar(clave, estado, detalle) {
 
 function pulso(estado) {
   $('#pulso').className = `pulso ${estado}`;
+}
+
+/** Deja armada la renovación silenciosa para el próximo toque en la pantalla. */
+function armarRenovacion() {
+  pulso('espera');
+  renovarAlPrimerGesto((ok) => {
+    marcar('sesion', ok ? 'ok' : 'mal', ultimoMotivo());
+    pulso(ok ? 'ok' : 'mal');
+    if (ok) rutear(); // ya hay token: se redibuja con datos frescos
+  });
 }
 
 let promptInstalar = null;
@@ -176,7 +187,13 @@ async function rutear() {
     return;
   }
 
-  if (!tokenVigente()) return pintarLogin();
+  // Con la sesión vencida no frenamos todo: si alguna vez diste permiso, se
+  // dibuja con la copia local y el token se renueva con tu primer toque.
+  // La pantalla de login queda solo para la primera vez.
+  if (!tokenVigente()) {
+    if (!yaOtorgado()) return pintarLogin();
+    armarRenovacion();
+  }
 
   if (SECTORES[r]) return SECTORES[r](main);
 
@@ -225,13 +242,13 @@ async function arrancar() {
   await rutear();
 }
 
-// Al volver a la app después de un rato el token pudo vencer.
+// Al volver a la app después de un rato el token pudo vencer. No interrumpimos:
+// se arma la renovación para el próximo toque y la vista sigue con la copia local.
 addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
-  if (rutaActual() === 'diagnostico') return;
-  if (tokenVigente()) return;
-  marcar('sesion', 'mal', 'token vencido');
-  pintarLogin();
+  if (tokenVigente() || !yaOtorgado()) return;
+  marcar('sesion', 'espera', 'token vencido, se renueva al tocar');
+  armarRenovacion();
 });
 
 arrancar();
