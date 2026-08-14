@@ -14,6 +14,7 @@ import {
   ultimoMotivo,
 } from './auth.js';
 import { render as renderHoy } from './vistas/hoy.js';
+import { render as renderCultivo } from './vistas/cultivo.js';
 
 const $ = (sel) => document.querySelector(sel);
 const main = $('#main');
@@ -139,19 +140,20 @@ $('#btn-volver').addEventListener('click', () => {
 // ---------- ruteo ----------
 
 const SECTORES = {
-  cultivo: ['🌱 Cultivo', 'Ciclo, fase, riego proyectado y registro. Todavía sin construir.'],
+  cultivo: null, // tiene vista propia
   academico: ['📕 Académico', 'Tesis, diplomatura y pipeline de formación. Todavía sin construir.'],
   laboral: ['💼 Laboral', 'Eje profesional, proyectos y hoja de ruta. Todavía sin construir.'],
 };
 
 function rutaActual() {
   const r = location.hash.replace(/^#\/?/, '');
-  if (SECTORES[r] || r === 'diagnostico') return r;
+  // `in` y no SECTORES[r]: un sector con vista propia vale null y sería falsy.
+  if (r in SECTORES || r === 'diagnostico') return r;
   return 'hoy';
 }
 
 function marcarPestana(r) {
-  const activa = SECTORES[r] ? r : 'hoy';
+  const activa = r in SECTORES ? r : 'hoy';
   document
     .querySelectorAll('.sector')
     .forEach((a) => a.classList.toggle('activo', a.dataset.r === activa));
@@ -173,6 +175,8 @@ async function rutear() {
   }
 
   if (!tokenVigente()) return pintarLogin();
+
+  if (r === 'cultivo') return renderCultivo(main);
 
   if (SECTORES[r]) {
     const [titulo, texto] = SECTORES[r];

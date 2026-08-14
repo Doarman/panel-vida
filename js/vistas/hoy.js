@@ -70,9 +70,13 @@ function pintarAhora(items, ahora) {
     const pct = total > 0 ? Math.min(100, Math.max(0, ((ahora - foco.inicio) / total) * 100)) : 0;
     const barra = el('div', 'barra');
     const relleno = el('i');
-    relleno.style.width = `${pct.toFixed(1)}%`;
     barra.append(relleno);
     s.append(barra);
+    // El ancho se aplica después del primer cuadro; si no, el navegador no ve
+    // un cambio y la transición de CSS no llega a dispararse.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      relleno.style.width = `${pct.toFixed(1)}%`;
+    }));
   }
 
   return s;

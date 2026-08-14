@@ -4,17 +4,23 @@
 import { CONFIG } from '../config.js';
 import { tokenVigente, reanudar } from './auth.js';
 
-async function pedir(url, { raw = false } = {}) {
+async function pedir(url, { raw = false, metodo = 'GET', cuerpo = null, tipo = null } = {}) {
   let token = tokenVigente() || (await reanudar());
   if (!token) throw new Error('Sin sesión');
 
-  let resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const armar = (t) => {
+    const cab = { Authorization: `Bearer ${t}` };
+    if (tipo) cab['Content-Type'] = tipo;
+    return { method: metodo, headers: cab, body: cuerpo };
+  };
+
+  let resp = await fetch(url, armar(token));
 
   // 401 = el token murió antes de lo previsto. Un reintento silencioso y listo.
   if (resp.status === 401) {
     token = await reanudar();
     if (!token) throw new Error('Sin sesión');
-    resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    resp = await fetch(url, armar(token));
   }
 
   if (!resp.ok) {
@@ -133,4 +139,57 @@ export async function leerJsonDeDrive(fileId) {
 
 export function leerEstado() {
   return leerJsonDeDrive(CONFIG.ESTADO_FILE_ID);
+}
+
+// ---------- escritura en Drive ----------
+//
+// Todo lo de acá abajo usa el scope drive.file, que solo alcanza archivos que
+// creó esta app. Por diseño no puede tocar cultivo.json, estado.json ni nada
+// más de tu Drive, ni siquiera por un bug.
+
+const DRIVE = 'https://www.googleapis.com/drive/v3/files';
+const SUBIDA = 'https://www.googleapis.com/upload/drive/v3/files';
+
+/** Busca un archivo creado por esta app. Devuelve el ID o null. */
+export async function buscarArchivoPropio(nombre) {
+  const u = new URL(DRIVE);
+  u.search = new URLSearchParams({
+    q: `name = '${nombre.replace(/'/g, "\\'")}' and trashed = false`,
+    fields: 'files(id,name)',
+    pageSize: '5',
+  });
+  const j = await pedir(u);
+  return j.files?.[0]?.id || null;
+}
+
+/** Crea un JSON nuevo. Queda en la raíz del Drive: la app no puede elegir
+ *  carpeta ajena con este scope, y no hace falta — estado.json lo referencia
+ *  por ID, no por ubicación. */
+export async function crearJsonPropio(nombre, datos) {
+  const limite = 'lim' + Math.random().toString(36).slice(2);
+  const cuerpo =
+    `--${limite}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+    JSON.stringify({ name: nombre, mimeType: 'application/json' }) +
+    `\r\n--${limite}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+    JSON.stringify(datos, null, 2) +
+    `\r\n--${limite}--`;
+
+  const u = new URL(SUBIDA);
+  u.search = new URLSearchParams({ uploadType: 'multipart', fields: 'id' });
+  const j = await pedir(u, {
+    metodo: 'POST',
+    cuerpo,
+    tipo: `multipart/related; boundary=${limite}`,
+  });
+  return j.id;
+}
+
+export async function reemplazarJsonPropio(fileId, datos) {
+  const u = new URL(`${SUBIDA}/${fileId}`);
+  u.search = new URLSearchParams({ uploadType: 'media', fields: 'id' });
+  await pedir(u, {
+    metodo: 'PATCH',
+    cuerpo: JSON.stringify(datos, null, 2),
+    tipo: 'application/json; charset=UTF-8',
+  });
 }
