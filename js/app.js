@@ -4,7 +4,16 @@
 // Todo error se pinta en pantalla: en el celular no hay consola, y un error
 // silencioso ahí es indistinguible de "la app no hace nada".
 
-import { iniciar, reanudar, conectar, salir, tokenVigente, venceEn } from './auth.js';
+import {
+  iniciar,
+  reanudar,
+  conectar,
+  salir,
+  tokenVigente,
+  venceEn,
+  yaOtorgado,
+  ultimoMotivo,
+} from './auth.js';
 import { eventosDeHoy, correoParaMirar, leerEstado } from './api.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -173,6 +182,21 @@ async function entrar() {
   await pruebaDeConexion();
 }
 
+/**
+ * Reconectar tras un vencimiento no es lo mismo que entrar por primera vez:
+ * el consentimiento ya está dado, así que es un toque y no un login. La
+ * pantalla tiene que decir eso, en vez de sugerir que perdiste la sesión.
+ */
+function prepararLogin() {
+  const otorgado = yaOtorgado();
+  $('#login-titulo').textContent = otorgado ? 'La sesión venció' : 'Sin conexión con Google';
+  $('#login-texto').textContent = otorgado
+    ? 'Google entrega permisos por una hora y no permite renovarlos solo a una app sin servidor. Un toque y seguís: no vuelve a pedirte permisos.'
+    : 'El panel lee la agenda, el correo y los archivos de tu cuenta. No guarda nada en ningún servidor propio.';
+  $('#btn-conectar').textContent = otorgado ? 'Reanudar' : 'Conectar con Google';
+  mostrarCard('login');
+}
+
 async function arrancar() {
   fechaDeHoy();
   rutear();
@@ -182,16 +206,20 @@ async function arrancar() {
   try {
     await iniciar();
   } catch (e) {
-    mostrarCard('login');
+    prepararLogin();
     const p = $('#login-error');
     p.textContent = e.message;
-    p.classList.remove('oculto', 'error');
+    p.classList.remove('oculto');
     p.classList.add('error');
+    marcar('sesion', 'mal', e.message);
     return;
   }
 
-  if (await reanudar()) await entrar();
-  else mostrarCard('login');
+  const ok = await reanudar();
+  marcar('sesion', ok ? 'ok' : 'mal', ultimoMotivo());
+
+  if (ok) await entrar();
+  else prepararLogin();
 }
 
 $('#btn-conectar').addEventListener('click', async (ev) => {
@@ -201,11 +229,13 @@ $('#btn-conectar').addEventListener('click', async (ev) => {
   err.classList.add('oculto');
   try {
     await conectar();
+    marcar('sesion', 'ok', ultimoMotivo());
     await entrar();
   } catch (e) {
     err.textContent = e.message;
     err.classList.remove('oculto');
     err.classList.add('error');
+    marcar('sesion', 'mal', e.message);
   } finally {
     btn.disabled = false;
   }
@@ -215,18 +245,18 @@ $('#btn-revisar').addEventListener('click', pruebaDeConexion);
 
 $('#btn-salir').addEventListener('click', async () => {
   await salir();
-  mostrarCard('login');
+  marcar('sesion', 'espera', ultimoMotivo());
+  prepararLogin();
 });
 
-// Al volver a la app después de un rato, el token pudo vencer.
+// Al volver a la app después de un rato el token pudo vencer. Mejor ofrecer
+// el toque de reconexión que dejar que los tres chequeos fallen en cascada.
 addEventListener('visibilitychange', () => {
-  if (
-    document.visibilityState === 'visible' &&
-    !tokenVigente() &&
-    !cards.estado.classList.contains('oculto')
-  ) {
-    pruebaDeConexion();
-  }
+  if (document.visibilityState !== 'visible') return;
+  if (cards.estado.classList.contains('oculto')) return;
+  if (tokenVigente()) return;
+  marcar('sesion', 'mal', 'token vencido');
+  prepararLogin();
 });
 
 arrancar();

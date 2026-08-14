@@ -1,22 +1,71 @@
 // OAuth contra Google, sin backend.
 //
-// Usamos el "token model" de Google Identity Services: devuelve un access token
-// por popup y NO entrega refresh token (sin servidor no habría dónde guardarlo).
-// El token dura ~1h; para renovarlo se pide de nuevo con prompt:'' y GIS lo
-// resuelve sin UI mientras tu sesión de Google siga viva en el navegador.
+// Límite de fondo, que no se puede esquivar del lado del cliente: Google no
+// entrega refresh token a una app de navegador (sin servidor no habría dónde
+// guardarlo). Solo hay access tokens de ~1 h.
 //
-// El token vive en memoria + sessionStorage. Nunca en localStorage: sessionStorage
-// muere al cerrar la app, y esa es justamente la prueba de que la renovación
-// silenciosa funciona en un arranque en frío.
+// Y la renovación tampoco es invisible: el flujo abre un popup aunque no tenga
+// nada que mostrar, y los navegadores bloquean los popups que no salen de un
+// toque del usuario. O sea que un token vencido SIEMPRE cuesta un toque.
+//
+// De ahí las dos decisiones de acá:
+//
+//  - El token se guarda en localStorage, no en sessionStorage. Así sobrevive a
+//    cerrar la app y volver a abrirla, que es el uso real: mientras siga vigente,
+//    entrás sin tocar nada. El costo es que el token queda escrito en el disco
+//    del teléfono hasta que vence. Como esta app no carga código de terceros
+//    (salvo el login de Google) ni muestra contenido ajeno, la superficie para
+//    robarlo es mínima; a cambio, la app deja de pedir login varias veces por día.
+//
+//  - Guardamos aparte si alguna vez diste consentimiento. Sin esa marca, ni
+//    intentamos el pedido automático: solo serviría para que el navegador
+//    bloquee un popup y ensucie el diagnóstico.
 
 import { CONFIG } from '../config.js';
 
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
 const STORE_KEY = 'pv.token';
+const GRANT_KEY = 'pv.otorgado';
 const MARGEN_MS = 60_000; // se considera vencido un minuto antes, por las dudas
 
 let tokenClient = null;
 let token = null; // { access_token, expira_en }
+let motivo = 'sin intentar'; // qué pasó en el último intento, para el diagnóstico
+
+// ---------- almacenamiento ----------
+
+function leer(clave) {
+  try {
+    return localStorage.getItem(clave);
+  } catch {
+    return null;
+  }
+}
+
+function escribir(clave, valor) {
+  try {
+    localStorage.setItem(clave, valor);
+  } catch {
+    /* modo privado o storage lleno: seguimos solo en memoria */
+  }
+}
+
+function borrar(clave) {
+  try {
+    localStorage.removeItem(clave);
+  } catch {}
+}
+
+function leerGuardado() {
+  try {
+    const raw = leer(STORE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------- carga de Google Identity Services ----------
 
 function cargarGis() {
   return new Promise((resolve, reject) => {
@@ -26,35 +75,12 @@ function cargarGis() {
     s.async = true;
     s.defer = true;
     s.onload = () => resolve();
-    s.onerror = () =>
-      reject(new Error('No se pudo cargar el login de Google. ¿Hay conexión?'));
+    s.onerror = () => reject(new Error('No se pudo cargar el login de Google. ¿Hay conexión?'));
     document.head.appendChild(s);
   });
 }
 
-function leerGuardado() {
-  try {
-    const raw = sessionStorage.getItem(STORE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function guardar(t) {
-  try {
-    sessionStorage.setItem(STORE_KEY, JSON.stringify(t));
-  } catch {
-    /* modo privado o storage lleno: seguimos solo en memoria */
-  }
-}
-
-function olvidar() {
-  token = null;
-  try {
-    sessionStorage.removeItem(STORE_KEY);
-  } catch {}
-}
+// ---------- estado público ----------
 
 /** Token vigente, o null si no hay o está por vencer. No dispara nada. */
 export function tokenVigente() {
@@ -67,6 +93,16 @@ export function venceEn() {
   return token ? token.expira_en : 0;
 }
 
+/** Hubo consentimiento alguna vez: entonces reconectar es un toque, no un login. */
+export function yaOtorgado() {
+  return leer(GRANT_KEY) === '1';
+}
+
+/** Qué pasó en el último intento. Lo muestra la tarjeta de diagnóstico. */
+export function ultimoMotivo() {
+  return motivo;
+}
+
 export async function iniciar() {
   await cargarGis();
   tokenClient = google.accounts.oauth2.initTokenClient({
@@ -76,17 +112,13 @@ export async function iniciar() {
   });
 }
 
-/**
- * Pide un token. Con prompt:'' GIS no muestra nada si ya diste consentimiento
- * y tu sesión sigue activa; si hace falta interacción, abre el popup — por eso
- * el pedido interactivo tiene que salir de un click del usuario.
- */
+// ---------- pedido de token ----------
+
 function pedirToken() {
   return new Promise((resolve, reject) => {
     tokenClient.callback = (resp) => {
-      if (resp.error) {
-        return reject(new Error(resp.error_description || resp.error));
-      }
+      if (resp.error) return reject(new Error(resp.error_description || resp.error));
+
       // La pantalla de consentimiento permite destildar permisos de a uno.
       // Si falta alguno, la app arrancaría rota de un modo difícil de diagnosticar.
       const faltan = CONFIG.SCOPES.split(' ').filter(
@@ -101,16 +133,18 @@ function pedirToken() {
           )
         );
       }
+
       token = {
         access_token: resp.access_token,
         expira_en: Date.now() + (Number(resp.expires_in) || 3600) * 1000,
       };
-      guardar(token);
+      escribir(STORE_KEY, JSON.stringify(token));
+      escribir(GRANT_KEY, '1');
       resolve(token.access_token);
     };
 
     tokenClient.error_callback = (err) => {
-      reject(new Error(err?.type || 'El flujo de autorización se interrumpió.'));
+      reject(new Error(err?.type || 'el flujo se interrumpió'));
     };
 
     try {
@@ -121,25 +155,51 @@ function pedirToken() {
   });
 }
 
-/** Intento silencioso al arrancar. Devuelve el token o null, sin tirar error. */
+/**
+ * Intento de arranque, sin molestar. Devuelve el token o null.
+ * Deja en `motivo` qué pasó, porque en el celular no hay otra forma de saberlo.
+ */
 export async function reanudar() {
   const vigente = tokenVigente();
-  if (vigente) return vigente;
+  if (vigente) {
+    const min = Math.round((token.expira_en - Date.now()) / 60000);
+    motivo = `token guardado, ${min} min restantes`;
+    return vigente;
+  }
+
+  if (!yaOtorgado()) {
+    motivo = 'nunca conectado';
+    return null;
+  }
+
+  // Hubo consentimiento pero el token venció. El pedido sin gesto casi seguro
+  // muere en el bloqueador de popups; lo intentamos igual y anotamos el motivo.
   try {
-    return await pedirToken();
-  } catch {
+    const t = await pedirToken();
+    motivo = 'renovado sin intervención';
+    return t;
+  } catch (e) {
+    const m = String(e.message);
+    motivo = m.includes('popup')
+      ? 'token vencido; el navegador bloqueó la renovación automática'
+      : `token vencido (${m})`;
     return null;
   }
 }
 
-/** Pedido explícito, disparado por un click. Acá sí propagamos el error. */
+/** Pedido explícito, disparado por un toque. Acá sí propagamos el error. */
 export async function conectar() {
-  return pedirToken();
+  const t = await pedirToken();
+  motivo = 'reconectado a mano';
+  return t;
 }
 
 export async function salir() {
   const t = tokenVigente();
-  olvidar();
+  token = null;
+  borrar(STORE_KEY);
+  borrar(GRANT_KEY);
+  motivo = 'sesión cerrada';
   if (t && window.google?.accounts?.oauth2) {
     await new Promise((r) => google.accounts.oauth2.revoke(t, r));
   }
