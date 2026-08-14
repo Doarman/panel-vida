@@ -16,50 +16,84 @@
 </head>
 <body>
 
+<!-- Sin devtools en el celular, cualquier error de JS es invisible.
+     Este cartel lo hace visible. Lo llena js/app.js. -->
+<div class="fatal oculto" id="fatal"></div>
+
 <header class="top">
-  <h1>Panel de Vida</h1>
+  <h1 id="titulo">Panel de Vida</h1>
   <p class="fecha" id="fecha"></p>
 </header>
 
 <main id="main">
-  <!-- Estado inicial: mientras se intenta reanudar la sesión sin molestar. -->
-  <section class="card" id="card-cargando">
-    <p class="muted">Reanudando la sesión…</p>
-  </section>
 
-  <!-- Sin sesión activa. -->
-  <section class="card oculto" id="card-login">
-    <h2>Sin conexión con Google</h2>
-    <p class="muted">
-      El panel lee la agenda, el correo y los archivos de tu cuenta.
-      No guarda nada en ningún servidor propio.
-    </p>
-    <button class="btn" id="btn-conectar">Conectar con Google</button>
-    <p class="nota oculto" id="login-error"></p>
-  </section>
+  <!-- ---------- pantalla: hoy ---------- -->
+  <div class="pantalla" id="p-hoy">
 
-  <!-- Con sesión activa: prueba de conexión de los tres orígenes de datos. -->
-  <section class="card oculto" id="card-estado">
-    <h2>Conexión</h2>
-    <ul class="chequeos" id="chequeos">
-      <li data-k="calendar"><span class="ico">·</span><span class="txt">Calendar</span><span class="det"></span></li>
-      <li data-k="gmail"><span class="ico">·</span><span class="txt">Gmail</span><span class="det"></span></li>
-      <li data-k="drive"><span class="ico">·</span><span class="txt">Drive · estado.json</span><span class="det"></span></li>
-    </ul>
-    <p class="nota" id="sesion-info"></p>
-    <div class="acciones">
-      <button class="btn btn-sec" id="btn-revisar">Revisar de nuevo</button>
-      <button class="btn btn-sec" id="btn-salir">Cerrar sesión</button>
-    </div>
-  </section>
+    <section class="card" id="card-cargando">
+      <p class="muted">Reanudando la sesión…</p>
+    </section>
+
+    <section class="card oculto" id="card-login">
+      <h2>Sin conexión con Google</h2>
+      <p class="muted">
+        El panel lee la agenda, el correo y los archivos de tu cuenta.
+        No guarda nada en ningún servidor propio.
+      </p>
+      <button class="btn" id="btn-conectar">Conectar con Google</button>
+      <p class="nota oculto" id="login-error"></p>
+    </section>
+
+    <section class="card oculto" id="card-estado">
+      <h2>Conexión</h2>
+      <ul class="chequeos" id="chequeos">
+        <li data-k="calendar"><span class="ico">·</span><span class="txt">Calendar</span><span class="det"></span></li>
+        <li data-k="gmail"><span class="ico">·</span><span class="txt">Gmail</span><span class="det"></span></li>
+        <li data-k="drive"><span class="ico">·</span><span class="txt">Drive · estado.json</span><span class="det"></span></li>
+      </ul>
+      <p class="nota" id="sesion-info"></p>
+      <div class="acciones">
+        <button class="btn btn-sec" id="btn-revisar">Revisar de nuevo</button>
+        <button class="btn btn-sec" id="btn-salir">Cerrar sesión</button>
+      </div>
+    </section>
+
+    <!-- Estado del entorno. Responde sin devtools si la app quedó instalada
+         y si el service worker levantó, que es lo que habilita instalarla. -->
+    <section class="card">
+      <h2>Diagnóstico</h2>
+      <ul class="chequeos">
+        <li data-k="modo"><span class="ico">·</span><span class="txt">Modo</span><span class="det"></span></li>
+        <li data-k="sw"><span class="ico">·</span><span class="txt">Service worker</span><span class="det"></span></li>
+        <li data-k="instalable"><span class="ico">·</span><span class="txt">Instalable</span><span class="det"></span></li>
+      </ul>
+      <button class="btn oculto" id="btn-instalar">Instalar en la pantalla de inicio</button>
+    </section>
+
+  </div>
+
+  <!-- ---------- pantalla: subsistema (todavía sin contenido) ---------- -->
+  <div class="pantalla oculto" id="p-sector">
+    <section class="card">
+      <h2 id="sector-titulo"></h2>
+      <p class="muted" id="sector-texto"></p>
+    </section>
+  </div>
+
 </main>
 
-<nav class="sectores" aria-label="Subsistemas">
-  <a class="sector" href="#/cultivo"><span class="emo">🌱</span>Cultivo</a>
-  <a class="sector" href="#/academico"><span class="emo">📕</span>Académico</a>
-  <a class="sector" href="#/laboral"><span class="emo">💼</span>Laboral</a>
+<nav class="sectores" aria-label="Secciones">
+  <a class="sector" href="#/hoy" data-r="hoy"><span class="emo">🗓️</span>Hoy</a>
+  <a class="sector" href="#/cultivo" data-r="cultivo"><span class="emo">🌱</span>Cultivo</a>
+  <a class="sector" href="#/academico" data-r="academico"><span class="emo">📕</span>Académico</a>
+  <a class="sector" href="#/laboral" data-r="laboral"><span class="emo">💼</span>Laboral</a>
 </nav>
 
 <script type="module" src="./js/app.js"></script>
+<script nomodule>
+  document.getElementById('fatal').textContent =
+    'Este navegador no soporta módulos de JavaScript. La app necesita uno más nuevo.';
+  document.getElementById('fatal').classList.remove('oculto');
+</script>
 </body>
 </html>

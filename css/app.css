@@ -168,4 +168,22 @@ body {
 
 .sector:active { background: var(--bg); }
 
+.sector.activo { color: var(--acento); }
+
 .sector .emo { font-size: 21px; line-height: 1.1; }
+
+/* ---------- cartel de error ---------- */
+/* En el celular no hay consola: si algo revienta, tiene que verse acá. */
+.fatal {
+  margin-bottom: 18px;
+  padding: 13px 15px;
+  border: 1px solid var(--falla);
+  border-radius: var(--r);
+  background: #2a1a17;
+  color: var(--falla);
+  font-size: 14px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+#btn-instalar { margin-top: 16px; }

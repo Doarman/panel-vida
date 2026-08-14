@@ -1,13 +1,21 @@
 // Service worker: solo cachea el shell propio.
 //
-// Dos reglas que evitan los dos bugs clásicos de una PWA:
-//  1. Nada de otros orígenes. Las APIs de Google y el script de login pasan
-//     de largo: un token cacheado o una respuesta vieja de Gmail sería peor
-//     que no tener offline.
-//  2. El HTML va network-first. Si fuera cache-first, un deploy nuevo nunca
-//     llegaría y quedarías clavado en una versión vieja sin entender por qué.
+// Tres reglas que evitan los bugs clásicos de una PWA:
+//
+//  1. Nada de otros orígenes. Las APIs de Google y el script de login pasan de
+//     largo: un token cacheado o una respuesta vieja de Gmail sería peor que
+//     no tener offline.
+//
+//  2. Todo lo propio va network-first, con el caché como respaldo. Cache-first
+//     sobre los .js obliga a acordarse de subir la versión en cada deploy, y
+//     el día que te olvidás quedás con el HTML nuevo llamando al código viejo.
+//     Acá el caché solo entra en juego cuando no hay red, que es para lo que
+//     lo queremos.
+//
+//  3. El caché se llena solo con lo que ya funcionó (respuestas 200), así una
+//     falla de red nunca envenena lo que quedó guardado.
 
-const VERSION = 'pv-v1';
+const VERSION = 'pv-v2';
 const SHELL = [
   './',
   './index.html',
@@ -43,25 +51,22 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== self.location.origin) return; // regla 1
   if (e.request.method !== 'GET') return;
 
-  if (e.request.mode === 'navigate') {
-    // regla 2
-    e.respondWith(
-      fetch(e.request).catch(() => caches.match('./index.html', { ignoreSearch: true }))
-    );
-    return;
-  }
-
+  // regla 2
   e.respondWith(
-    caches.match(e.request).then(
-      (hit) =>
-        hit ||
-        fetch(e.request).then((resp) => {
-          if (resp.ok) {
-            const copia = resp.clone();
-            caches.open(VERSION).then((c) => c.put(e.request, copia));
-          }
-          return resp;
-        })
-    )
+    fetch(e.request)
+      .then((resp) => {
+        if (resp.ok) {
+          const copia = resp.clone(); // regla 3
+          caches.open(VERSION).then((c) => c.put(e.request, copia));
+        }
+        return resp;
+      })
+      .catch(async () => {
+        const hit = await caches.match(e.request, { ignoreSearch: true });
+        if (hit) return hit;
+        // Sin red y sin copia: si es una navegación, al menos servimos el shell.
+        if (e.request.mode === 'navigate') return caches.match('./index.html');
+        throw new Error('sin red y sin caché');
+      })
   );
 });
