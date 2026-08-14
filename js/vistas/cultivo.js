@@ -9,21 +9,9 @@
 import { leerEstado, leerJsonDeDrive } from '../api.js';
 import { subsistema, alertas } from '../contract.js';
 import { registrar, sincronizar, pendientes, subidos } from '../riegos.js';
+import { el, seccion, cargando } from '../ui.js';
 
 // ---------- helpers ----------
-
-function el(tag, clase, texto) {
-  const n = document.createElement(tag);
-  if (clase) n.className = clase;
-  if (texto != null) n.textContent = texto;
-  return n;
-}
-
-function seccion(titulo) {
-  const s = el('section', 'bloque');
-  s.append(el('h2', 'titulo', titulo));
-  return s;
-}
 
 const dosDig = (n) => String(n).padStart(2, '0');
 
@@ -296,8 +284,8 @@ function pintarRegistros(lista, sinSubir) {
 
 export async function render(main) {
   main.textContent = '';
-  const cargando = el('p', 'cargando', 'Leyendo el cultivo…');
-  main.append(cargando);
+  const aviso = cargando('Leyendo el cultivo…');
+  main.append(aviso);
 
   let estado, cultivo;
   try {
@@ -306,7 +294,7 @@ export async function render(main) {
     if (!sub?.archivoId) throw new Error('estado.json no apunta a ningún archivo de cultivo');
     cultivo = await leerJsonDeDrive(sub.archivoId);
   } catch (e) {
-    cargando.remove();
+    aviso.remove();
     const s = seccion('🌱 Cultivo');
     s.append(el('p', 'vacio mal', e.message));
     main.append(s);
@@ -323,7 +311,7 @@ export async function render(main) {
   }
   const sinSubir = pendientes();
 
-  cargando.remove();
+  aviso.remove();
 
   const sub = subsistema(estado, 'cultivo');
   const ciclo = cultivo?.ciclo_activo;

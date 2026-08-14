@@ -7,21 +7,7 @@
 import { CONFIG } from '../../config.js';
 import { eventosDeHoy, correoParaMirar, leerEstado } from '../api.js';
 import { mapaDeColores, clasificar, alertas } from '../contract.js';
-
-// ---------- helpers de DOM ----------
-
-function el(tag, clase, texto) {
-  const n = document.createElement(tag);
-  if (clase) n.className = clase;
-  if (texto != null) n.textContent = texto;
-  return n;
-}
-
-function seccion(titulo) {
-  const s = el('section', 'bloque');
-  s.append(el('h2', 'titulo', titulo));
-  return s;
-}
+import { el, seccion, error as pintarError, cargando } from '../ui.js';
 
 // ---------- helpers de tiempo ----------
 
@@ -155,18 +141,12 @@ function pintarCorreo({ mensajes, ocultos }) {
   return s;
 }
 
-function pintarError(titulo, e) {
-  const s = seccion(titulo);
-  s.append(el('p', 'vacio mal', e.message));
-  return s;
-}
-
 // ---------- render ----------
 
 export async function render(main) {
   main.textContent = '';
-  const cargando = el('p', 'cargando', 'Leyendo tu día…');
-  main.append(cargando);
+  const aviso = cargando('Leyendo tu día…');
+  main.append(aviso);
 
   const ahora = new Date();
 
@@ -178,7 +158,7 @@ export async function render(main) {
     leerEstado(),
   ]);
 
-  cargando.remove();
+  aviso.remove();
 
   const estado = estRes.status === 'fulfilled' ? estRes.value : null;
   const mapa = mapaDeColores(estado);

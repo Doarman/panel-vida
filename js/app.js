@@ -15,6 +15,8 @@ import {
 } from './auth.js';
 import { render as renderHoy } from './vistas/hoy.js';
 import { render as renderCultivo } from './vistas/cultivo.js';
+import { render as renderAcademico } from './vistas/academico.js';
+import { render as renderLaboral } from './vistas/laboral.js';
 
 const $ = (sel) => document.querySelector(sel);
 const main = $('#main');
@@ -140,9 +142,9 @@ $('#btn-volver').addEventListener('click', () => {
 // ---------- ruteo ----------
 
 const SECTORES = {
-  cultivo: null, // tiene vista propia
-  academico: ['📕 Académico', 'Tesis, diplomatura y pipeline de formación. Todavía sin construir.'],
-  laboral: ['💼 Laboral', 'Eje profesional, proyectos y hoja de ruta. Todavía sin construir.'],
+  cultivo: renderCultivo,
+  academico: renderAcademico,
+  laboral: renderLaboral,
 };
 
 function rutaActual() {
@@ -176,23 +178,7 @@ async function rutear() {
 
   if (!tokenVigente()) return pintarLogin();
 
-  if (r === 'cultivo') return renderCultivo(main);
-
-  if (SECTORES[r]) {
-    const [titulo, texto] = SECTORES[r];
-    main.textContent = '';
-    const s = document.createElement('section');
-    s.className = 'bloque';
-    const h = document.createElement('h2');
-    h.className = 'titulo';
-    h.textContent = titulo;
-    const p = document.createElement('p');
-    p.className = 'vacio';
-    p.textContent = texto;
-    s.append(h, p);
-    main.append(s);
-    return;
-  }
+  if (SECTORES[r]) return SECTORES[r](main);
 
   await renderHoy(main);
 }
