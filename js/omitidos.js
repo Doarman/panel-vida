@@ -41,10 +41,6 @@ export function restaurarTodo() {
   guardar([]);
 }
 
-export function cuantosOmitidos() {
-  return leer().length;
-}
-
 /** Quita de una lista lo que esté oculto hoy. */
 export function filtrar(lista, texto = (x) => x) {
   return lista.filter((x) => !estaOmitido(texto(x)));

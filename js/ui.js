@@ -44,7 +44,12 @@ export function badge(estado) {
 
 /**
  * Item de una lista que se puede ocultar por hoy.
+ *
  * El botón dice "ocultar", no "listo": la app no audita si lo hiciste.
+ *
+ * Se quita del DOM solo, sin redibujar la pantalla. Antes disparaba un
+ * re-render completo: la vista volvía a pedir los datos, saltaba al principio y
+ * perdías dónde estabas, todo para sacar una línea.
  */
 export function itemOmitible(contenido, alOcultar) {
   const li = el('li', 'omitible');
@@ -55,22 +60,40 @@ export function itemOmitible(contenido, alOcultar) {
   x.type = 'button';
   x.title = 'Ocultar por hoy';
   x.setAttribute('aria-label', 'Ocultar por hoy');
-  x.addEventListener('click', () => {
-    li.classList.add('yendose');
-    setTimeout(alOcultar, 180);
-  });
 
+  const quitar = () => {
+    if (li.classList.contains('yendose')) return;
+    li.classList.add('yendose');
+    setTimeout(() => {
+      const lista = li.parentElement;
+      li.remove();
+      alOcultar(lista);
+    }, 180);
+  };
+
+  x.addEventListener('click', quitar);
   li.append(cuerpo, x);
   return li;
 }
 
-/** Pie para restaurar lo ocultado. Devuelve null si no hay nada oculto. */
-export function pieOmitidos(cuantos, alRestaurar) {
-  if (!cuantos) return null;
-  const b = el('button', 'enlace comoBoton', `${cuantos} oculto${cuantos > 1 ? 's' : ''} hoy · mostrar`);
+/**
+ * Pie para volver a mostrar lo ocultado.
+ * Se actualiza solo; no hace falta redibujar la sección para que el número
+ * cambie. Restaurar sí redibuja, porque los items tienen que volver.
+ */
+export function pieOmitidos(contar, alRestaurar) {
+  const b = el('button', 'enlace comoBoton');
   b.type = 'button';
   b.addEventListener('click', alRestaurar);
-  return b;
+
+  const actualizar = () => {
+    const n = contar();
+    b.textContent = `${n} oculto${n === 1 ? '' : 's'} hoy · mostrar`;
+    b.classList.toggle('oculto', n === 0);
+  };
+
+  actualizar();
+  return { nodo: b, actualizar };
 }
 
 /** Fila etiqueta/valor, con un subtexto opcional. */

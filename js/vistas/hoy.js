@@ -158,23 +158,34 @@ const RUTA_DE = { cultivo: 'cultivo', academico: 'rumbo', laboral: 'rumbo' };
 function pintarMirada(lista, refrescar) {
   if (!lista.length) return null;
 
-  const visibles = lista.filter((a) => !estaOmitido(`${a.origen}:${a.texto}`));
-  const ocultos = lista.length - visibles.length;
+  const clave = (a) => `${a.origen}:${a.texto}`;
+  const visibles = lista.filter((a) => !estaOmitido(clave(a)));
 
   const s = seccion('Requiere tu mirada');
   const ul = el('ul', 'mirada');
 
+  const pie = pieOmitidos(
+    () => lista.filter((a) => estaOmitido(clave(a))).length,
+    () => {
+      restaurarTodo();
+      refrescar();
+    }
+  );
+
+  const vacio = el('p', 'vacio oculto', 'Nada a la vista por hoy.');
+
   for (const a of visibles.slice(0, TOPE_MIRADA)) {
     ul.append(
-      itemOmitible([el('span', 'orig', a.origen), el('span', 'mirada-t', a.texto)], () => {
-        omitir(`${a.origen}:${a.texto}`);
-        refrescar();
+      itemOmitible([el('span', 'orig', a.origen), el('span', 'mirada-t', a.texto)], (contenedor) => {
+        omitir(clave(a));
+        pie.actualizar();
+        vacio.classList.toggle('oculto', Boolean(contenedor?.children.length));
       })
     );
   }
 
-  if (!visibles.length) s.append(el('p', 'vacio', 'Nada a la vista por hoy.'));
-  else s.append(ul);
+  if (!visibles.length) vacio.classList.remove('oculto');
+  s.append(ul, vacio);
 
   const resto = visibles.length - TOPE_MIRADA;
   if (resto > 0) {
@@ -184,12 +195,7 @@ function pintarMirada(lista, refrescar) {
     s.append(a);
   }
 
-  const pie = pieOmitidos(ocultos, () => {
-    restaurarTodo();
-    refrescar();
-  });
-  if (pie) s.append(pie);
-
+  s.append(pie.nodo);
   return s;
 }
 

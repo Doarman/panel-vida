@@ -378,32 +378,36 @@ function pintarAbiertos(cultivo, refrescar) {
       })),
   ];
 
-  const visibles = items.filter((i) => !estaOmitido(i.clave));
-  const ocultos = items.length - visibles.length;
   if (!items.length) return null;
+  const visibles = items.filter((i) => !estaOmitido(i.clave));
 
   const s = seccion('Requiere tu mirada');
   const ul = el('ul', 'mirada');
 
+  const pie = pieOmitidos(
+    () => items.filter((i) => estaOmitido(i.clave)).length,
+    () => {
+      restaurarTodo();
+      refrescar();
+    }
+  );
+
+  const vacio = el('p', 'vacio oculto', 'Nada a la vista por hoy.');
+
   for (const i of visibles) {
     const partes = [el('span', 'mirada-t', i.titulo)];
     if (i.meta) partes.push(el('small', null, i.meta));
-    const li = itemOmitible(partes, () => {
+    const li = itemOmitible(partes, (contenedor) => {
       omitir(i.clave);
-      refrescar();
+      pie.actualizar();
+      vacio.classList.toggle('oculto', Boolean(contenedor?.children.length));
     });
     if (i.cerca) li.classList.add('cerca');
     ul.append(li);
   }
 
-  if (!visibles.length) s.append(el('p', 'vacio', 'Nada a la vista por hoy.'));
-  else s.append(ul);
-
-  const pie = pieOmitidos(ocultos, () => {
-    restaurarTodo();
-    refrescar();
-  });
-  if (pie) s.append(pie);
+  if (!visibles.length) vacio.classList.remove('oculto');
+  s.append(ul, vacio, pie.nodo);
 
   return s;
 }
