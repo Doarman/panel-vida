@@ -35,32 +35,34 @@ async function pedir(url, { raw = false, metodo = 'GET', cuerpo = null, tipo = n
   return raw ? resp.text() : resp.json();
 }
 
-/** Límites del día de hoy en hora local del dispositivo. */
-function limitesDelDia(d = new Date()) {
-  const desde = new Date(d);
+/**
+ * Eventos desde hoy y por los próximos días.
+ *
+ * Se trae la semana entera de una sola llamada: el mismo costo de red que
+ * pedir solo hoy, y permite mostrar lo que viene. Como el calendario lo
+ * escribe Claude con anticipación, ver mañana suele importar más que confirmar
+ * que hoy no hay nada cargado.
+ *
+ * singleEvents=true es obligatorio: sin eso las series recurrentes vuelven como
+ * una sola regla en vez de como las instancias de cada día.
+ */
+export async function eventosDeLaSemana(dias = 7) {
+  const desde = new Date();
   desde.setHours(0, 0, 0, 0);
   const hasta = new Date(desde);
-  hasta.setDate(hasta.getDate() + 1);
-  return { desde: desde.toISOString(), hasta: hasta.toISOString() };
-}
+  hasta.setDate(hasta.getDate() + dias);
 
-/**
- * Eventos de hoy. singleEvents=true es obligatorio: sin eso las series
- * recurrentes vuelven como una sola regla y no como las instancias del día.
- */
-export async function eventosDeHoy() {
-  const { desde, hasta } = limitesDelDia();
   const u = new URL(
     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
       CONFIG.CALENDAR_ID
     )}/events`
   );
   u.search = new URLSearchParams({
-    timeMin: desde,
-    timeMax: hasta,
+    timeMin: desde.toISOString(),
+    timeMax: hasta.toISOString(),
     singleEvents: 'true',
     orderBy: 'startTime',
-    maxResults: '50',
+    maxResults: '250',
     timeZone: CONFIG.TZ,
   });
   const j = await pedir(u);

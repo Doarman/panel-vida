@@ -1,9 +1,9 @@
-// Pantalla Laboral: eje profesional, proyectos activos y hoja de ruta.
+// Bloques de lo laboral: eje profesional, proyectos activos y hoja de ruta.
+//
+// No tiene pantalla propia: se compone dentro de Rumbo junto con lo académico.
 
-import { leerEstado } from '../api.js';
 import { subsistema } from '../contract.js';
-import { el, seccion, error, cargando, badge } from '../ui.js';
-import { conCache } from '../cache.js';
+import { el, seccion, badge } from '../ui.js';
 
 function pintarEje(objetivo) {
   if (!objetivo) return null;
@@ -56,31 +56,11 @@ function pintarRuta(lista) {
   return s;
 }
 
-export async function render(main) {
-  main.textContent = '';
-  main.append(cargando('Leyendo lo laboral…'));
-
-  let estado;
-  try {
-    estado = (await conCache('estado', leerEstado)).datos;
-  } catch (e) {
-    main.textContent = '';
-    main.append(error('💼 Laboral', e));
-    return;
-  }
-
-  main.textContent = '';
+export function secciones(estado) {
   const sub = subsistema(estado, 'laboral');
-
-  if (!sub) {
-    const s = seccion('💼 Laboral');
-    s.append(el('p', 'vacio', 'El subsistema no está activo en estado.json.'));
-    main.append(s);
-    return;
-  }
-
+  if (!sub) return [];
   const r = sub.resumen;
-  for (const parte of [pintarEje(r.objetivo), pintarProyectos(r.proyectos), pintarRuta(r.hoja_de_ruta)]) {
-    if (parte) main.append(parte);
-  }
+  return [pintarEje(r.objetivo), pintarProyectos(r.proyectos), pintarRuta(r.hoja_de_ruta)].filter(
+    Boolean
+  );
 }

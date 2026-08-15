@@ -16,8 +16,7 @@ import {
 } from './auth.js';
 import { render as renderHoy } from './vistas/hoy.js';
 import { render as renderCultivo } from './vistas/cultivo.js';
-import { render as renderAcademico } from './vistas/academico.js';
-import { render as renderLaboral } from './vistas/laboral.js';
+import { render as renderRumbo } from './vistas/rumbo.js';
 
 const $ = (sel) => document.querySelector(sel);
 const main = $('#main');
@@ -154,8 +153,7 @@ $('#btn-volver').addEventListener('click', () => {
 
 const SECTORES = {
   cultivo: renderCultivo,
-  academico: renderAcademico,
-  laboral: renderLaboral,
+  rumbo: renderRumbo,
 };
 
 function rutaActual() {

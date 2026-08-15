@@ -10,6 +10,18 @@
 
 const PREFIJO = 'pv.cache.';
 
+// Capa en memoria, además de la de disco. Sin esto, cambiar de pestaña vuelve
+// a bajar estado.json de Drive —y cultivo.json son 24 KB—, así que ir y volver
+// entre secciones costaba varios viajes de red en 4G.
+const memoria = new Map();
+const TTL = 90_000;
+
+/** Fuerza la próxima lectura a ir a la red. Después de escribir algo. */
+export function invalidar(clave) {
+  if (clave) memoria.delete(clave);
+  else memoria.clear();
+}
+
 export function guardar(clave, datos) {
   try {
     localStorage.setItem(PREFIJO + clave, JSON.stringify({ ts: Date.now(), datos }));
@@ -45,14 +57,26 @@ export function antiguedad(ts) {
  * Intenta la red y cae al caché si falla.
  * Devuelve { datos, ts, fresco } — `fresco` false significa que es una copia.
  */
-export async function conCache(clave, traer) {
+export async function conCache(clave, traer, { ttl = TTL } = {}) {
+  const enMemoria = memoria.get(clave);
+  if (enMemoria && Date.now() - enMemoria.ts < ttl) {
+    return { ...enMemoria, fresco: true };
+  }
+
   try {
     const datos = await traer();
+    const entrada = { datos, ts: Date.now() };
+    memoria.set(clave, entrada);
     guardar(clave, datos);
-    return { datos, ts: Date.now(), fresco: true };
+    return { ...entrada, fresco: true };
   } catch (e) {
+    // Sin red o sin sesión: sirve lo último que haya, primero de memoria.
+    if (enMemoria) return { ...enMemoria, fresco: false };
     const copia = leer(clave);
-    if (copia) return { ...copia, fresco: false };
-    throw e; // sin red y sin copia: no hay nada que mostrar
+    if (copia) {
+      memoria.set(clave, copia);
+      return { ...copia, fresco: false };
+    }
+    throw e; // sin nada guardado: no hay qué mostrar
   }
 }

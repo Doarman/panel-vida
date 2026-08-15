@@ -1,12 +1,11 @@
-// Pantalla Académico: tesis, lo que está cursando y el pipeline de formación.
+// Bloques de lo académico: tesis, lo que cursa y el pipeline de formación.
 //
-// Igual que en el resto: nada de instrucciones. La tesis muestra su estado y
+// No tiene pantalla propia: se compone dentro de Rumbo junto con lo laboral.
+// Igual que en el resto, nada de instrucciones: la tesis muestra su estado y
 // sus bloques protegidos; no dice cuánto habría que avanzar.
 
-import { leerEstado } from '../api.js';
 import { subsistema } from '../contract.js';
-import { el, seccion, error, cargando, badge } from '../ui.js';
-import { conCache } from '../cache.js';
+import { el, seccion, badge } from '../ui.js';
 
 function pintarTesis(t) {
   if (!t) return null;
@@ -20,10 +19,7 @@ function pintarTesis(t) {
   if (!meta.length) meta.push('Sin fecha de entrega definida');
   s.append(el('p', 'ciclo-d', meta.join(' · ')));
 
-  if (t.nota) {
-    const n = el('p', 'nota', t.nota);
-    s.append(n);
-  }
+  if (t.nota) s.append(el('p', 'nota', t.nota));
   return s;
 }
 
@@ -65,31 +61,11 @@ function pintarPipeline(lista) {
   return s;
 }
 
-export async function render(main) {
-  main.textContent = '';
-  main.append(cargando('Leyendo lo académico…'));
-
-  let estado;
-  try {
-    estado = (await conCache('estado', leerEstado)).datos;
-  } catch (e) {
-    main.textContent = '';
-    main.append(error('📕 Académico', e));
-    return;
-  }
-
-  main.textContent = '';
+export function secciones(estado) {
   const sub = subsistema(estado, 'academico');
-
-  if (!sub) {
-    const s = seccion('📕 Académico');
-    s.append(el('p', 'vacio', 'El subsistema no está activo en estado.json.'));
-    main.append(s);
-    return;
-  }
-
+  if (!sub) return [];
   const r = sub.resumen;
-  for (const parte of [pintarTesis(r.tesis), pintarCursando(r.cursando), pintarPipeline(r.pipeline_formacion)]) {
-    if (parte) main.append(parte);
-  }
+  return [pintarTesis(r.tesis), pintarCursando(r.cursando), pintarPipeline(r.pipeline_formacion)].filter(
+    Boolean
+  );
 }

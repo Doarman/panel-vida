@@ -52,9 +52,11 @@ export function pendientes() {
 
 // ---------- archivo en Drive ----------
 
-async function idDelArchivo() {
-  const cacheado = localStorage.getItem(CACHE_ID);
-  if (cacheado) return cacheado;
+async function idDelArchivo(forzarBusqueda = false) {
+  if (!forzarBusqueda) {
+    const cacheado = localStorage.getItem(CACHE_ID);
+    if (cacheado) return cacheado;
+  }
 
   let id = await buscarArchivoPropio(ARCHIVO);
   if (!id) id = await crearJsonPropio(ARCHIVO, ESQUELETO);
@@ -65,12 +67,43 @@ async function idDelArchivo() {
   return id;
 }
 
+const NO_EXISTE = /404|not found|no encontr/i;
+
+/**
+ * Corre una operación contra el archivo, y si el ID guardado ya no sirve,
+ * lo busca de nuevo y reintenta.
+ *
+ * Sin esto, el ID quedaba cacheado para siempre: si el archivo se borraba, se
+ * mandaba a la papelera, o Cowork lo reemplazaba por uno nuevo en vez de
+ * vaciarlo, la app seguía escribiendo contra un ID muerto y TODOS los
+ * registros fallaban sin forma de recuperarse.
+ */
+async function conArchivo(accion) {
+  try {
+    return await accion(await idDelArchivo());
+  } catch (e) {
+    if (!NO_EXISTE.test(e.message)) throw e;
+    try {
+      localStorage.removeItem(CACHE_ID);
+    } catch {}
+    return accion(await idDelArchivo(true));
+  }
+}
+
 /** Lo ya subido. Devuelve [] si el archivo todavía no existe. */
 export async function subidos() {
-  const id = localStorage.getItem(CACHE_ID) || (await buscarArchivoPropio(ARCHIVO));
+  const id = localStorage.getItem(CACHE_ID);
   if (!id) return [];
-  const j = await leerJsonDeDrive(id);
-  return Array.isArray(j?.riegos) ? j.riegos : [];
+  try {
+    const j = await leerJsonDeDrive(id);
+    return Array.isArray(j?.riegos) ? j.riegos : [];
+  } catch (e) {
+    if (!NO_EXISTE.test(e.message)) throw e;
+    try {
+      localStorage.removeItem(CACHE_ID);
+    } catch {}
+    return [];
+  }
 }
 
 /**
@@ -82,24 +115,26 @@ export async function sincronizar() {
   const cola = leerPendientes();
   if (!cola.length) return { subidos: 0 };
 
-  const id = await idDelArchivo();
+  const nuevos = await conArchivo(async (id) => {
+    let actual;
+    try {
+      actual = await leerJsonDeDrive(id);
+    } catch (e) {
+      if (NO_EXISTE.test(e.message)) throw e; // que conArchivo lo recupere
+      actual = { ...ESQUELETO };
+    }
+    if (!Array.isArray(actual.riegos)) actual.riegos = [];
 
-  let actual;
-  try {
-    actual = await leerJsonDeDrive(id);
-  } catch {
-    actual = { ...ESQUELETO };
-  }
-  if (!Array.isArray(actual.riegos)) actual.riegos = [];
+    const yaEstan = new Set(actual.riegos.map((r) => r.id));
+    const pendientesReales = cola.filter((r) => !yaEstan.has(r.id));
 
-  const yaEstan = new Set(actual.riegos.map((r) => r.id));
-  const nuevos = cola.filter((r) => !yaEstan.has(r.id));
+    actual.riegos.push(...pendientesReales);
+    actual.riegos.sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+    actual._meta = { ...ESQUELETO._meta, actualizado: new Date().toISOString() };
 
-  actual.riegos.push(...nuevos);
-  actual.riegos.sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
-  actual._meta = { ...ESQUELETO._meta, actualizado: new Date().toISOString() };
-
-  await reemplazarJsonPropio(id, actual);
+    await reemplazarJsonPropio(id, actual);
+    return pendientesReales;
+  });
 
   guardarPendientes([]); // recién ahora, con la escritura confirmada
   return { subidos: nuevos.length };

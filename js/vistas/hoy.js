@@ -1,11 +1,14 @@
-// Pantalla Hoy: el día y lo que pide mirada.
+// Pantalla Hoy: la semana, el bloque en curso y lo que pide mirada.
+//
+// Muestra siete días y no solo hoy porque el calendario lo escribe Claude con
+// anticipación: ver lo que viene sirve más que confirmar que hoy está vacío.
 //
 // Cada sección se dibuja por su cuenta: si Gmail falla, la agenda igual se ve.
 // Todo el texto entra por textContent, nunca por innerHTML: los asuntos de
 // correo son texto ajeno y no tienen por qué poder inyectar nada.
 
 import { CONFIG } from '../../config.js';
-import { eventosDeHoy, correoParaMirar, leerEstado } from '../api.js';
+import { eventosDeLaSemana, correoParaMirar, leerEstado } from '../api.js';
 import { mapaDeColores, clasificar, alertas } from '../contract.js';
 import { el, seccion, error as pintarError, cargando, itemOmitible, pieOmitidos } from '../ui.js';
 import { conCache, antiguedad } from '../cache.js';
@@ -22,6 +25,9 @@ const fmtHora = new Intl.DateTimeFormat('es-AR', {
 
 const hora = (iso) => fmtHora.format(new Date(iso));
 
+const dosDig = (n) => String(n).padStart(2, '0');
+const claveDia = (d) => `${d.getFullYear()}-${dosDig(d.getMonth() + 1)}-${dosDig(d.getDate())}`;
+
 /** Un evento normalizado: los de todo el día no traen hora. */
 function normalizar(ev) {
   const todoElDia = Boolean(ev.start?.date);
@@ -36,13 +42,51 @@ function estadoTemporal({ inicio, fin }, ahora) {
   return 'futuro';
 }
 
+// ---------- tira de la semana ----------
+
+const LETRAS = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+
+function pintarSemana(porDia, elegido, alElegir) {
+  const cont = el('nav', 'semana');
+  cont.setAttribute('aria-label', 'Días de la semana');
+  const hoy = claveDia(new Date());
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + i);
+    const clave = claveDia(d);
+    const items = porDia.get(clave) || [];
+
+    const b = el('button', 'dia');
+    b.type = 'button';
+    if (clave === hoy) b.classList.add('hoy');
+    if (clave === elegido) b.classList.add('elegido');
+
+    b.append(el('span', 'dia-l', LETRAS[d.getDay()]));
+    b.append(el('span', 'dia-n', String(d.getDate())));
+
+    // Un punto por bloque, con el color de su tipo: se ve la carga del día
+    // sin leer nada.
+    const pts = el('span', 'dia-pts');
+    for (const it of items.slice(0, 4)) {
+      pts.append(el('i', `t-${it.clase.tipo}`));
+    }
+    b.append(pts);
+
+    b.addEventListener('click', () => alElegir(clave));
+    cont.append(b);
+  }
+
+  return cont;
+}
+
 // ---------- secciones ----------
 
 function pintarAhora(items, ahora) {
   const actual = items.find((i) => estadoTemporal(i, ahora) === 'actual' && !i.todoElDia);
   const siguiente = items.find((i) => estadoTemporal(i, ahora) === 'futuro' && !i.todoElDia);
   const foco = actual || siguiente;
-
   if (!foco) return null;
 
   const s = el('section', `ahora t-${foco.clase.tipo}`);
@@ -62,26 +106,28 @@ function pintarAhora(items, ahora) {
     s.append(barra);
     // El ancho se aplica después del primer cuadro; si no, el navegador no ve
     // un cambio y la transición de CSS no llega a dispararse.
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      relleno.style.width = `${pct.toFixed(1)}%`;
-    }));
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        relleno.style.width = `${pct.toFixed(1)}%`;
+      })
+    );
   }
 
   return s;
 }
 
-function pintarAgenda(items, ahora) {
-  const s = seccion('El día');
+function pintarAgenda(items, ahora, esHoy) {
+  const s = seccion(esHoy ? 'El día' : 'Ese día');
 
   if (!items.length) {
-    s.append(el('p', 'vacio', 'No hay bloques en el calendario para hoy.'));
+    s.append(el('p', 'vacio', 'No hay bloques en el calendario.'));
     return s;
   }
 
   const lista = el('ol', 'linea');
 
   for (const it of items) {
-    const cuando = estadoTemporal(it, ahora);
+    const cuando = esHoy ? estadoTemporal(it, ahora) : 'futuro';
     const li = el('li', `ev t-${it.clase.tipo} ${cuando}`);
 
     li.append(el('time', 'ev-h', it.todoElDia ? '—' : hora(it.inicio)));
@@ -89,9 +135,7 @@ function pintarAgenda(items, ahora) {
     const cuerpo = el('div', 'ev-c');
     cuerpo.append(el('p', 'ev-t', it.ev.summary || 'Sin título'));
 
-    const meta = [];
-    if (!it.todoElDia) meta.push(`hasta ${hora(it.fin)}`);
-    else meta.push('todo el día');
+    const meta = [it.todoElDia ? 'todo el día' : `hasta ${hora(it.fin)}`];
     if (it.clase.etiqueta) meta.push(it.clase.etiqueta);
     cuerpo.append(el('p', 'ev-m', meta.join(' · ')));
 
@@ -104,9 +148,12 @@ function pintarAgenda(items, ahora) {
 }
 
 // Hoy es un vistazo, no el detalle: se muestran unas pocas y el resto vive en
-// la sección de cada subsistema. Repetir la lista entera en las dos pantallas
-// era decir dos veces lo mismo.
+// la sección de cada subsistema.
 const TOPE_MIRADA = 3;
+
+// Los subsistemas de estado.json no son uno a uno con las pestañas: lo
+// académico y lo laboral comparten la pantalla Rumbo.
+const RUTA_DE = { cultivo: 'cultivo', academico: 'rumbo', laboral: 'rumbo' };
 
 function pintarMirada(lista, refrescar) {
   if (!lista.length) return null;
@@ -131,8 +178,9 @@ function pintarMirada(lista, refrescar) {
 
   const resto = visibles.length - TOPE_MIRADA;
   if (resto > 0) {
-    const a = el('a', 'enlace', `${resto} más en ${visibles[TOPE_MIRADA].origen} →`);
-    a.href = `#/${visibles[TOPE_MIRADA].origen}`;
+    const origen = visibles[TOPE_MIRADA].origen;
+    const a = el('a', 'enlace', `${resto} más en ${origen} →`);
+    a.href = `#/${RUTA_DE[origen] || 'hoy'}`;
     s.append(a);
   }
 
@@ -165,34 +213,35 @@ function pintarCorreo({ mensajes, ocultos }) {
   }
   s.append(ul);
 
-  if (ocultos > 0) {
-    s.append(el('p', 'pie', `${ocultos} más sin leer.`));
-  }
+  if (ocultos > 0) s.append(el('p', 'pie', `${ocultos} más sin leer.`));
   return s;
 }
 
 // ---------- render ----------
 
+// Qué día está elegido en la tira. Vive fuera del render para que no se pierda
+// al redibujar por ocultar un aviso.
+let diaElegido = null;
+
 export async function render(main) {
   main.textContent = '';
-  const aviso = cargando('Leyendo tu día…');
+  const aviso = cargando('Leyendo tu semana…');
   main.append(aviso);
 
   const ahora = new Date();
+  const hoy = claveDia(ahora);
 
   // Las tres fuentes en paralelo y tolerando fallas por separado: que Gmail se
   // caiga no tiene por qué llevarse puesta la agenda. Cada una cae a su copia
   // local si la red o la sesión no responden.
   const [evRes, mailRes, estRes] = await Promise.allSettled([
-    conCache('eventos', eventosDeHoy),
+    conCache('eventos', () => eventosDeLaSemana(7)),
     conCache('correo', correoParaMirar),
     conCache('estado', leerEstado),
   ]);
 
   aviso.remove();
 
-  // Si algo salió de la copia local hay que decirlo: un dato viejo sin fecha
-  // es peor que no tener dato.
   const viejos = [evRes, mailRes, estRes]
     .filter((r) => r.status === 'fulfilled' && !r.value.fresco)
     .map((r) => r.value.ts);
@@ -209,11 +258,47 @@ export async function render(main) {
       .map((i) => ({ ...i, clase: clasificar(i.ev, mapa) }))
       .sort((a, b) => a.inicio - b.inicio);
 
-    const foco = pintarAhora(items, ahora);
-    if (foco) main.append(foco);
-    main.append(pintarAgenda(items, ahora));
+    const porDia = new Map();
+    for (const it of items) {
+      const k = claveDia(it.inicio);
+      if (!porDia.has(k)) porDia.set(k, []);
+      porDia.get(k).push(it);
+    }
+
+    // Un día vacío también se puede elegir; lo que no vale es un día fuera de
+    // la ventana (pasa si la app quedó abierta de un día para el otro).
+    const ventana = new Set();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(ahora);
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() + i);
+      ventana.add(claveDia(d));
+    }
+    if (!diaElegido || !ventana.has(diaElegido)) diaElegido = hoy;
+
+    const zona = el('div');
+
+    const dibujarDia = () => {
+      zona.textContent = '';
+      const delDia = porDia.get(diaElegido) || [];
+      const esHoy = diaElegido === hoy;
+      if (esHoy) {
+        const foco = pintarAhora(delDia, ahora);
+        if (foco) zona.append(foco);
+      }
+      zona.append(pintarAgenda(delDia, ahora, esHoy));
+    };
+
+    main.append(
+      pintarSemana(porDia, diaElegido, (clave) => {
+        diaElegido = clave;
+        render(main);
+      })
+    );
+    dibujarDia();
+    main.append(zona);
   } else {
-    main.append(pintarError('El día', evRes.reason));
+    main.append(pintarError('La semana', evRes.reason));
   }
 
   if (estado) {

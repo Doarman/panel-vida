@@ -346,13 +346,22 @@ function pintarProyeccion(cultivo, resumen, ultimoRiego) {
   return s;
 }
 
+/**
+ * Lo que el plan de la fase contempla.
+ *
+ * Estas frases vienen en imperativo desde cultivo.json ("Instalar red entre el
+ * 20 y el 22"), porque son el texto del Dossier. La app no puede reescribir tus
+ * datos, pero sí puede dejar claro que está citando el plan y no dándote una
+ * orden: de ahí el título y la aclaración de origen.
+ */
 function pintarPrevisto(fase) {
   const acciones = fase?.acciones || [];
   if (!acciones.length) return null;
-  const s = seccion('Previsto en esta fase');
+  const s = seccion('Lo que el plan prevé');
   const ul = el('ul', 'mirada');
   for (const a of acciones) ul.append(el('li', null, a));
   s.append(ul);
+  s.append(el('p', 'pie', `Texto del plan para la fase ${fase.id}, tal como está escrito.`));
   return s;
 }
 
