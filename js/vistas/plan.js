@@ -6,7 +6,7 @@
 //
 // Se lee, no se opera. Por eso no hay ningún control.
 
-import { leerEstado, leerJsonDeDrive } from '../api.js';
+import { leerEstado, leerArchivoDeSubsistema } from '../api.js';
 import { subsistema } from '../contract.js';
 import { el, seccion, error, cargando } from '../ui.js';
 import { conCache } from '../cache.js';
@@ -209,8 +209,11 @@ export async function render(main) {
   try {
     const estado = (await conCache('estado', leerEstado)).datos;
     const sub = subsistema(estado, 'cultivo');
-    if (!sub?.archivoId) throw new Error('estado.json no apunta a ningún archivo de cultivo');
-    cultivo = (await conCache('cultivo', () => leerJsonDeDrive(sub.archivoId))).datos;
+    if (!sub?.archivoId && !sub?.ruta) {
+      throw new Error('estado.json no apunta a ningún archivo de cultivo');
+    }
+    const c = await conCache('cultivo', () => leerArchivoDeSubsistema(sub));
+    cultivo = c.datos.datos; // conCache envuelve; leerArchivoDeSubsistema también
   } catch (e) {
     aviso.remove();
     main.append(error('Plan', e));

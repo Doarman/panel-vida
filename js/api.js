@@ -143,6 +143,36 @@ export function leerEstado() {
   return leerJsonDeDrive(CONFIG.ESTADO_FILE_ID);
 }
 
+/**
+ * Lee el archivo de un subsistema, y si el puntero quedó viejo lo busca por
+ * nombre y sigue andando.
+ *
+ * Pasó de verdad: Cowork reemplazó cultivo.json creando un archivo nuevo en vez
+ * de editar el existente, y el `drive_file_id` de estado.json quedó apuntando a
+ * un archivo borrado. La arquitectura de punteros no puede depender de que
+ * nadie se equivoque nunca: si el ID no responde, se recurre al nombre.
+ *
+ * Igual es un parche, no la cura. Lo correcto es que estado.json quede con el
+ * ID correcto; por eso `puntero_viejo` sale en el resultado, para poder avisar.
+ */
+export async function leerArchivoDeSubsistema({ archivoId, ruta }) {
+  if (archivoId) {
+    try {
+      return { datos: await leerJsonDeDrive(archivoId), puntero_viejo: false };
+    } catch (e) {
+      if (!/404|not found|no encontr/i.test(e.message)) throw e;
+    }
+  }
+
+  const nombre = String(ruta || '').split('/').pop();
+  if (!nombre) throw new Error('El puntero de estado.json no responde y no hay ruta para buscar el archivo.');
+
+  const id = await buscarArchivoPropio(nombre);
+  if (!id) throw new Error(`El puntero de estado.json no responde y no se encontró "${nombre}" en Drive.`);
+
+  return { datos: await leerJsonDeDrive(id), puntero_viejo: true, idReal: id };
+}
+
 // ---------- escritura en Drive ----------
 //
 // Todo lo de acá abajo usa el scope drive.file, que solo alcanza archivos que
@@ -152,7 +182,12 @@ export function leerEstado() {
 const DRIVE = 'https://www.googleapis.com/drive/v3/files';
 const SUBIDA = 'https://www.googleapis.com/upload/drive/v3/files';
 
-/** Busca un archivo creado por esta app. Devuelve el ID o null. */
+/**
+ * Busca un archivo por nombre y devuelve su ID, o null.
+ *
+ * Alcanza todo el Drive porque también tenemos drive.readonly; el permiso de
+ * escritura sigue limitado a los archivos que creó la app (drive.file).
+ */
 export async function buscarArchivoPropio(nombre) {
   const u = new URL(DRIVE);
   u.search = new URLSearchParams({

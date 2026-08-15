@@ -49,6 +49,8 @@ export function subsistema(estado, clave) {
   return {
     resumen: s.resumen || {},
     archivoId: s.drive_file_id || null,
+    // Ruta declarada del archivo. Es el respaldo cuando el ID queda viejo.
+    ruta: s.archivo_datos || null,
     reglas: Array.isArray(s.reglas_criticas_para_el_asistente)
       ? s.reglas_criticas_para_el_asistente
       : [],

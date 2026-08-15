@@ -7,7 +7,7 @@
 // Las dosis sí van completas y al frente: son el dato que se usa parado frente
 // a la mezcla, y no saberlas de memoria no es una decisión, es una molestia.
 
-import { leerEstado, leerJsonDeDrive } from '../api.js';
+import { leerEstado, leerArchivoDeSubsistema } from '../api.js';
 import { subsistema } from '../contract.js';
 import { registrar, sincronizar, pendientes, subidos } from '../riegos.js';
 import { el, seccion, cargando, itemOmitible, pieOmitidos } from '../ui.js';
@@ -469,12 +469,18 @@ export async function render(main) {
     estado = e.datos;
 
     const sub = subsistema(estado, 'cultivo');
-    if (!sub?.archivoId) throw new Error('estado.json no apunta a ningún archivo de cultivo');
+    if (!sub?.archivoId && !sub?.ruta) {
+      throw new Error('estado.json no apunta a ningún archivo de cultivo');
+    }
 
-    const c = await conCache('cultivo', () => leerJsonDeDrive(sub.archivoId));
-    cultivo = c.datos;
+    const c = await conCache('cultivo', () => leerArchivoDeSubsistema(sub));
+    const { datos: contenido, puntero_viejo } = c.datos;
+    cultivo = contenido;
 
     if (!e.fresco || !c.fresco) marca = `Copia local · ${antiguedad(Math.min(e.ts, c.ts))}`;
+    else if (puntero_viejo) {
+      marca = 'El drive_file_id de estado.json apunta a un archivo borrado. Se encontró cultivo.json por nombre; conviene corregir el puntero.';
+    }
   } catch (e) {
     aviso.remove();
     const s = seccion('🌱 Cultivo');
