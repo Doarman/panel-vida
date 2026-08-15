@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Panel de Vida</title>
-<meta name="theme-color" content="#0a100d">
+<meta name="theme-color" content="#e2f0fc" id="theme-color">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -30,9 +30,9 @@
 <main id="main"></main>
 
 <nav class="sectores" aria-label="Secciones">
-  <a class="sector" href="#/hoy" data-r="hoy"><span class="emo">🗓️</span>Hoy</a>
-  <a class="sector" href="#/cultivo" data-r="cultivo"><span class="emo">🌱</span>Cultivo</a>
-  <a class="sector" href="#/rumbo" data-r="rumbo"><span class="emo">🧭</span>Rumbo</a>
+  <a class="sector" href="#/hoy" data-r="hoy"><i class="glifo g-hoy"></i>Hoy</a>
+  <a class="sector" href="#/cultivo" data-r="cultivo"><i class="glifo g-cultivo"></i>Cultivo</a>
+  <a class="sector" href="#/rumbo" data-r="rumbo"><i class="glifo g-rumbo"></i>Rumbo</a>
 </nav>
 
 <!-- Tarjetas que se mueven a <main> según haga falta. Viven acá para que sus
@@ -60,7 +60,10 @@
     <p class="nota" id="sesion-info"></p>
     <button class="btn oculto" id="btn-instalar">Instalar en la pantalla de inicio</button>
     <div class="acciones">
+      <button class="btn btn-sec" id="btn-modo">Penumbra</button>
       <button class="btn btn-sec" id="btn-volver">Volver</button>
+    </div>
+    <div class="acciones">
       <button class="btn btn-sec" id="btn-salir">Cerrar sesión</button>
     </div>
   </section>

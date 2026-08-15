@@ -134,11 +134,69 @@ export function posicionEnMezcla(cultivo, clave) {
   return i === -1 ? 99 : i;
 }
 
-/** Dosis de una fase, ya ordenadas como se preparan. */
-export function dosisOrdenadas(cultivo, fase) {
-  const { dosis, notas } = leerNutricion(fase?.nutricion);
+/** Dosis de un bloque de nutrición, ya ordenadas como se preparan. */
+export function dosisDe(cultivo, nutricion) {
+  const { dosis, notas } = leerNutricion(nutricion);
   dosis.sort((a, b) => posicionEnMezcla(cultivo, a.clave) - posicionEnMezcla(cultivo, b.clave));
   return { dosis, notas };
+}
+
+/** Dosis del fertirriego completo de una fase. */
+export function dosisOrdenadas(cultivo, fase) {
+  return dosisDe(cultivo, fase?.nutricion);
+}
+
+// ---------- tipos de riego ----------
+
+const ORDEN_TIPOS = ['completo', 'intermedio', 'agua', 'ripening', 'flush'];
+
+/** Los tipos que declara el archivo, en un orden estable para la pantalla. */
+export function tiposDeRiego(cultivo) {
+  const t = cultivo?.tipos_de_riego;
+  if (!t) return [];
+  const claves = Object.keys(t);
+  return [...claves].sort((a, b) => {
+    const ia = ORDEN_TIPOS.indexOf(a);
+    const ib = ORDEN_TIPOS.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+}
+
+/**
+ * La receta de un tipo de riego en una fase dada.
+ *
+ * Existe por la regla r13: el intermedio NO es una fracción del completo, es
+ * una fórmula propia y fija que no aporta sales. Si la app mostrara media
+ * dosis, encadenar riegos seguiría acumulando sales y la alternancia de r2 y
+ * r11 perdería el sentido. Por eso qué bloque leer lo decide `tipos_de_riego`
+ * del archivo, y no una cuenta de la app.
+ */
+export function recetaDe(cultivo, fase, tipo = 'completo') {
+  const def = cultivo?.tipos_de_riego?.[tipo] || null;
+
+  // Sin declaración, solo el completo tiene un origen evidente.
+  const usa = def ? def.usa : tipo === 'completo' ? 'fase.nutricion' : null;
+
+  let nutricion = null;
+  if (usa === 'fase.nutricion_intermedio') nutricion = fase?.nutricion_intermedio;
+  else if (usa) nutricion = fase?.nutricion; // cubre "fase.nutricion" y "fase.nutricion de S8"
+
+  const { dosis, notas } = nutricion ? dosisDe(cultivo, nutricion) : { dosis: [], notas: [] };
+
+  const esIntermedio = usa === 'fase.nutricion_intermedio';
+
+  return {
+    tipo,
+    dosis,
+    notas,
+    aportaSales: def ? def.aporta_sales !== false : true,
+    formulaFija: def?.formula_fija || null,
+    nota: def?.nota || (esIntermedio ? fase?.nutricion_intermedio_nota : null) || null,
+    ec: esIntermedio ? (fase?.ec_objetivo_intermedio ?? null) : (fase?.ec_objetivo ?? null),
+    ph: esIntermedio ? (fase?.ph_entrada_intermedio ?? null) : (fase?.ph_entrada ?? null),
+    // Sin declaración no se inventa una receta: mejor decir que no se sabe.
+    declarado: Boolean(def) || tipo === 'completo',
+  };
 }
 
 /**
@@ -230,7 +288,6 @@ export function totalMezcla(cultivo, fase) {
  * fase en vez de hacerte tildarlos uno por uno.
  */
 export function productosDeLaFase(cultivo, fase, tipo) {
-  if (tipo === 'agua' || tipo === 'flush') return [];
-  const { dosis } = leerNutricion(fase?.nutricion);
+  const { dosis } = recetaDe(cultivo, fase, tipo);
   return dosis.map((d) => infoProducto(cultivo, d.clave)?.id).filter(Boolean);
 }

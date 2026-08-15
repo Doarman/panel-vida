@@ -23,6 +23,38 @@ import { render as renderPlan } from './vistas/plan.js';
 const $ = (sel) => document.querySelector(sel);
 const main = $('#main');
 
+// ---------- día / penumbra ----------
+//
+// No son dos diseños: son los mismos tokens bajados de luz. Sigue al sistema,
+// y si elegís a mano queda elegido. El theme-color acompaña para que la barra
+// de estado de Android no corte con el fondo.
+
+const MODO = 'pv.modo';
+const oscuroDelSistema = () => matchMedia('(prefers-color-scheme: dark)').matches;
+
+function modoActual() {
+  try {
+    const guardado = localStorage.getItem(MODO);
+    if (guardado === 'dia' || guardado === 'penumbra') return guardado;
+  } catch {}
+  return oscuroDelSistema() ? 'penumbra' : 'dia';
+}
+
+function aplicarModo(modo = modoActual()) {
+  document.documentElement.dataset.modo = modo;
+  $('#theme-color').content = modo === 'penumbra' ? '#131a22' : '#e2f0fc';
+  const b = $('#btn-modo');
+  if (b) b.textContent = modo === 'penumbra' ? 'Modo día' : 'Modo penumbra';
+}
+
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  try {
+    if (!localStorage.getItem(MODO)) aplicarModo();
+  } catch {
+    aplicarModo();
+  }
+});
+
 // ---------- errores visibles ----------
 
 function fatal(msg) {
@@ -167,6 +199,14 @@ $('#btn-volver').addEventListener('click', () => {
   location.hash = '#/hoy';
 });
 
+$('#btn-modo').addEventListener('click', () => {
+  const nuevo = modoActual() === 'penumbra' ? 'dia' : 'penumbra';
+  try {
+    localStorage.setItem(MODO, nuevo);
+  } catch {}
+  aplicarModo(nuevo);
+});
+
 // ---------- ruteo ----------
 
 const SECTORES = {
@@ -243,6 +283,7 @@ function fechaDeHoy() {
 }
 
 async function arrancar() {
+  aplicarModo();
   fechaDeHoy();
   diagnosticarEntorno();
 

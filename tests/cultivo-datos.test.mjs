@@ -18,6 +18,7 @@ import assert from 'node:assert/strict';
 import {
   dosisOrdenadas, ordenDeLaFase, totalMezcla, productosDeLaFase,
   faseDe, diaDeCiclo, aguaBase, nombreDe, leerNutricion, rango,
+  recetaDe, tiposDeRiego,
 } from '../js/cultivo-datos.js';
 
 const cultivo = {
@@ -38,7 +39,12 @@ const cultivo = {
           pure_zym_ml_l: 1, vitamax_ml_l: 0.5,
         },
         ec_objetivo: [0.8, 1.0],
+        ph_entrada: [6.0, 6.2],
         volumen_por_maceta_l: [2.5, 3],
+        nutricion_intermedio: { pure_zym_ml_l: 1, vitamax_ml_l: 0.5 },
+        nutricion_intermedio_nota: 'Formula FIJA, no es una fraccion del completo.',
+        ec_objetivo_intermedio: null,
+        ph_entrada_intermedio: [6.0, 6.2],
       },
       {
         id: 'S6',
@@ -70,6 +76,17 @@ const cultivo = {
     { id: 'flora_booster', nombre: 'Flora Booster (Namaste)' },
     { id: 'trico_mas', nombre: 'Trico+ (Namaste)' },
   ],
+  tipos_de_riego: {
+    completo: { usa: 'fase.nutricion', aporta_sales: true },
+    intermedio: {
+      usa: 'fase.nutricion_intermedio',
+      aporta_sales: false,
+      formula_fija: 'Pure Zym 1 ml/L + Vitamax 0.5 ml/L',
+      nota: 'NO es media dosis del completo.',
+    },
+    agua: { usa: null, aporta_sales: false },
+    flush: { usa: null, aporta_sales: false, formula_fija: 'Agua + Pure Zym 2 ml/L' },
+  },
   orden_de_mezcla: [
     'Agua',
     'Rhino Skin (solo, agitar antes de seguir)',
@@ -158,6 +175,67 @@ test('el número de aplicación de Flora Booster es una nota, no una dosis', () 
   assert.ok(notas.some((n) => /aplicación 4/.test(n)));
 });
 
+// ---------- tipos de riego (regla r13) ----------
+
+test('el intermedio NO es una fracción del completo: es su propia fórmula', () => {
+  const completo = recetaDe(cultivo, fase('V1'), 'completo');
+  const intermedio = recetaDe(cultivo, fase('V1'), 'intermedio');
+
+  assert.deepEqual(
+    intermedio.dosis.map((d) => [d.clave, d.valor]),
+    [['pure_zym', 1], ['vitamax', 0.5]]
+  );
+
+  // Ninguna dosis del intermedio es una proporción de la del completo.
+  for (const d of intermedio.dosis) {
+    const igual = completo.dosis.find((c) => c.clave === d.clave);
+    assert.equal(d.valor, igual.valor, `${d.clave} mantiene su valor, no se escala`);
+  }
+});
+
+test('el intermedio no lleva sales: sin Grow, sin CalMag, sin Rhino', () => {
+  const { dosis, aportaSales } = recetaDe(cultivo, fase('V1'), 'intermedio');
+  const claves = dosis.map((d) => d.clave);
+  for (const sal of ['grow', 'calmag', 'rhino_skin', 'hybrids', 'pk_booster']) {
+    assert.ok(!claves.includes(sal), `${sal} no va en un intermedio`);
+  }
+  assert.equal(aportaSales, false);
+});
+
+test('un riego de agua no muestra ninguna dosis', () => {
+  const r = recetaDe(cultivo, fase('V1'), 'agua');
+  assert.deepEqual(r.dosis, []);
+  assert.equal(r.aportaSales, false);
+});
+
+test('el flush declara su fórmula fija en vez de dosis por fase', () => {
+  const r = recetaDe(cultivo, fase('V1'), 'flush');
+  assert.deepEqual(r.dosis, []);
+  assert.match(r.formulaFija, /Pure Zym 2 ml\/L/);
+});
+
+test('el intermedio no arrastra el EC objetivo del completo', () => {
+  assert.deepEqual(recetaDe(cultivo, fase('V1'), 'completo').ec, [0.8, 1.0]);
+  assert.equal(recetaDe(cultivo, fase('V1'), 'intermedio').ec, null);
+});
+
+test('un tipo no declarado se marca como tal en vez de inventar receta', () => {
+  const r = recetaDe(cultivo, fase('V1'), 'ripening');
+  assert.equal(r.declarado, false);
+  assert.deepEqual(r.dosis, []);
+});
+
+test('los tipos se ordenan de forma estable para la pantalla', () => {
+  assert.deepEqual(tiposDeRiego(cultivo), ['completo', 'intermedio', 'agua', 'flush']);
+});
+
+test('los productos registrados dependen del tipo de riego', () => {
+  assert.deepEqual(productosDeLaFase(cultivo, fase('V1'), 'intermedio').sort(), [
+    'pure_zym', 'vitamax',
+  ]);
+  assert.deepEqual(productosDeLaFase(cultivo, fase('V1'), 'agua'), []);
+});
+
 // ---------- cantidades ----------
 
 test('el total de la tanda son las macetas por los litros de la fase', () => {
@@ -209,15 +287,10 @@ test('sin bloque de agua no se inventa un valor', () => {
 
 // ---------- productos aplicados ----------
 
-test('los productos del riego se deducen de la fase', () => {
+test('los productos del riego completo se deducen de la fase', () => {
   assert.deepEqual(productosDeLaFase(cultivo, fase('V1'), 'completo').sort(), [
     'calmag', 'grow', 'pure_zym', 'rhino', 'vitamax',
   ]);
-});
-
-test('un riego de agua no lleva productos', () => {
-  assert.deepEqual(productosDeLaFase(cultivo, fase('V1'), 'agua'), []);
-  assert.deepEqual(productosDeLaFase(cultivo, fase('V1'), 'flush'), []);
 });
 
 // ---------- formato ----------

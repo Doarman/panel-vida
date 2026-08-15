@@ -3,6 +3,10 @@
 // Se dibuja con supersampling 4x para que los bordes queden suaves.
 //
 //   node tools/make-icons.mjs
+//
+// Ícono "Amanecer": disco de sol saliendo detrás de dos filas de panel. Solo
+// círculo y pastilla, para que sobreviva a 48 px y al recorte de cualquier
+// launcher. Las medidas van en fracciones del lado, así que escala solo.
 
 import { deflateSync } from 'node:zlib';
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -12,12 +16,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'icons');
 
-// ---------- paleta (la misma que css/app.css) ----------
-const BG = [0x0f, 0x17, 0x14];
-const SUN = [0xe8, 0xb5, 0x63];
-const HORIZON = [0x3b, 0x52, 0x47];
-
 // ---------- PNG mínimo ----------
+
 const CRC_TABLE = (() => {
   const t = new Int32Array(256);
   for (let n = 0; n < 256; n++) {
@@ -49,7 +49,6 @@ function encodePng(size, rgba) {
   ihdr.writeUInt32BE(size, 4);
   ihdr[8] = 8; // 8 bits por canal
   ihdr[9] = 6; // RGBA
-  // 10,11,12 = compresión / filtro / entrelazado, todos 0
 
   // Cada scanline lleva un byte de filtro al principio (0 = sin filtro).
   const raw = Buffer.alloc(size * (size * 4 + 1));
@@ -67,48 +66,105 @@ function encodePng(size, rgba) {
   ]);
 }
 
-// ---------- dibujo ----------
-const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
-const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+// ---------- color ----------
 
-// Distancia a un segmento horizontal de extremos redondeados.
-function capsule(x, y, x0, x1, cy, r) {
+const hex = (s) => [
+  parseInt(s.slice(1, 3), 16),
+  parseInt(s.slice(3, 5), 16),
+  parseInt(s.slice(5, 7), 16),
+];
+
+const mezclar = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+/** Interpola una lista de paradas [pos, color]. */
+function gradiente(paradas, t) {
+  t = clamp01(t);
+  for (let i = 0; i < paradas.length - 1; i++) {
+    const [p0, c0] = paradas[i];
+    const [p1, c1] = paradas[i + 1];
+    if (t <= p1) return mezclar(c0, c1, p1 === p0 ? 0 : (t - p0) / (p1 - p0));
+  }
+  return paradas.at(-1)[1];
+}
+
+/**
+ * Posición sobre la línea de un linear-gradient de CSS.
+ * En CSS 0deg apunta hacia arriba y 90deg hacia la derecha; en coordenadas de
+ * imagen (y hacia abajo) esa dirección es (sin A, cos A).
+ */
+function ejeLineal(x, y, grados) {
+  const a = (grados * Math.PI) / 180;
+  const dx = Math.sin(a);
+  const dy = Math.cos(a);
+  const largo = Math.abs(dx) + Math.abs(dy);
+  return 0.5 + ((x - 0.5) * dx + (y - 0.5) * dy) / largo;
+}
+
+// ---------- el dibujo ----------
+
+const FONDO = [
+  [0.0, hex('#8CC6F0')],
+  [0.4, hex('#CDE6F8')],
+  [0.7, hex('#F2F7FB')],
+  [1.0, hex('#FFF2D9')],
+];
+
+const SOL = [
+  [0, hex('#FFD873')],
+  [1, hex('#F2A31F')],
+];
+
+const HALO = hex('#FFBE4A');
+const TINTA = hex('#14212D');
+const PLANO = hex('#DCE4EC');
+
+/** Distancia a un segmento horizontal de extremos redondeados. */
+function pastilla(x, y, x0, x1, cy, r) {
   const px = Math.max(x0, Math.min(x1, x));
   return Math.hypot(x - px, y - cy) - r;
 }
 
-// Devuelve [r,g,b,a] para un punto en coordenadas normalizadas 0..1.
-// `inset` encoge el dibujo hacia el centro (zona segura de los íconos maskable).
-// `round` aplica esquinas redondeadas al fondo (íconos comunes).
-function shade(x, y, { inset, round }) {
-  // fondo
-  let rgb = BG;
+/**
+ * Color en un punto normalizado 0..1.
+ * `inset` encoge el dibujo hacia el centro (zona segura de los maskable).
+ * `round` redondea las esquinas del fondo. `mono` lo resuelve en una sola tinta.
+ */
+function shade(x, y, { inset = 1, round = 0, mono = false } = {}) {
   let alpha = 1;
 
   if (round > 0) {
     // esquinas redondeadas vía SDF de rectángulo
     const dx = Math.abs(x - 0.5) - (0.5 - round);
     const dy = Math.abs(y - 0.5) - (0.5 - round);
-    const outside = Math.hypot(Math.max(dx, 0), Math.max(dy, 0));
-    const d = outside + Math.min(Math.max(dx, dy), 0) - round;
-    if (d > 0) alpha = 0;
+    const fuera = Math.hypot(Math.max(dx, 0), Math.max(dy, 0));
+    if (fuera + Math.min(Math.max(dx, dy), 0) - round > 0) alpha = 0;
   }
+
+  let rgb = mono ? PLANO : gradiente(FONDO, ejeLineal(x, y, 168));
 
   // coordenadas del dibujo, encogidas hacia el centro
   const u = (x - 0.5) / inset + 0.5;
   const v = (y - 0.5) / inset + 0.5;
 
-  // halo tenue del sol
-  const dSun = Math.hypot(u - 0.5, v - 0.42);
-  const glow = clamp01(1 - (dSun - 0.18) / 0.22);
-  if (glow > 0) rgb = mix(rgb, SUN, glow * glow * 0.16);
-
-  // horizonte
-  const dLine = capsule(u, v, 0.2, 0.8, 0.66, 0.022);
-  if (dLine < 0) rgb = HORIZON;
+  // halo del sol
+  if (!mono) {
+    const dHalo = Math.hypot(u - 0.5, v - 0.61);
+    const g = clamp01(1 - dHalo / 0.331);
+    if (g > 0) rgb = mezclar(rgb, HALO, g * g * 0.5);
+  }
 
   // sol
-  if (dSun < 0.18) rgb = SUN;
+  const dSol = Math.hypot(u - 0.5, v - 0.55);
+  if (dSol < 0.21) {
+    rgb = mono ? TINTA : gradiente(SOL, (v - 0.34) / 0.42);
+  }
+
+  // dos filas de panel, la de abajo más corta y más tenue
+  if (pastilla(u, v, 0.13, 0.87, 0.69, 0.04) < 0) rgb = mono ? TINTA : [255, 255, 255];
+  if (pastilla(u, v, 0.13, 0.57, 0.83, 0.04) < 0) {
+    rgb = mezclar(rgb, mono ? TINTA : [255, 255, 255], mono ? 0.55 : 0.62);
+  }
 
   return [rgb[0], rgb[1], rgb[2], alpha];
 }
@@ -122,22 +178,19 @@ function render(size, opts) {
       let r = 0, g = 0, b = 0, a = 0;
       for (let sy = 0; sy < SS; sy++) {
         for (let sx = 0; sx < SS; sx++) {
-          const px = (x + (sx + 0.5) / SS) / size;
-          const py = (y + (sy + 0.5) / SS) / size;
-          const c = shade(px, py, opts);
+          const c = shade((x + (sx + 0.5) / SS) / size, (y + (sy + 0.5) / SS) / size, opts);
           r += c[0] * c[3];
           g += c[1] * c[3];
           b += c[2] * c[3];
           a += c[3];
         }
       }
-      const n = SS * SS;
       const i = (y * size + x) * 4;
       // premultiplicado -> recto, para no oscurecer el borde
       buf[i] = a > 0 ? Math.round(r / a) : 0;
       buf[i + 1] = a > 0 ? Math.round(g / a) : 0;
       buf[i + 2] = a > 0 ? Math.round(b / a) : 0;
-      buf[i + 3] = Math.round((a / n) * 255);
+      buf[i + 3] = Math.round((a / (SS * SS)) * 255);
     }
   }
   return buf;
@@ -146,14 +199,14 @@ function render(size, opts) {
 mkdirSync(OUT, { recursive: true });
 
 const jobs = [
-  // Íconos comunes: esquinas redondeadas, dibujo casi a sangre.
-  { file: 'icon-192.png', size: 192, opts: { inset: 0.92, round: 0.22 } },
-  { file: 'icon-512.png', size: 512, opts: { inset: 0.92, round: 0.22 } },
-  // Maskable: fondo cuadrado a sangre y dibujo dentro de la zona segura,
-  // porque Android le aplica su propia máscara (círculo, squircle, etc.).
-  { file: 'icon-maskable-512.png', size: 512, opts: { inset: 0.62, round: 0 } },
-  // Favicon para la pestaña del navegador.
-  { file: 'favicon-64.png', size: 64, opts: { inset: 0.92, round: 0.22 } },
+  // Comunes: squircle de radio 23% del lado, dibujo casi a sangre.
+  { file: 'icon-192.png', size: 192, opts: { inset: 0.96, round: 0.23 } },
+  { file: 'icon-512.png', size: 512, opts: { inset: 0.96, round: 0.23 } },
+  { file: 'favicon-64.png', size: 64, opts: { inset: 0.96, round: 0.23 } },
+  // Maskable: fondo cuadrado a sangre, dibujo dentro del círculo seguro del 80%.
+  { file: 'icon-maskable-512.png', size: 512, opts: { inset: 0.72, round: 0 } },
+  // Monocromo: las tres formas en una sola tinta.
+  { file: 'icon-mono-512.png', size: 512, opts: { inset: 0.96, round: 0.23, mono: true } },
 ];
 
 for (const { file, size, opts } of jobs) {

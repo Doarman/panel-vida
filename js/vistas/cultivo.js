@@ -18,6 +18,7 @@ import {
   faseDe, diaDeCiclo, nombreDe, infoProducto,
   dosisOrdenadas, totalMezcla, productosDeLaFase,
   ordenDeLaFase, aguaBase, estadoDeSecado, fechaCorta,
+  recetaDe, tiposDeRiego,
 } from '../cultivo-datos.js';
 
 // ---------- fichas de dato ----------
@@ -138,13 +139,56 @@ function cantidad(valor) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-function pintarMezcla(cultivo, fase) {
-  if (!fase?.nutricion) return null;
+/**
+ * Qué tipo de riego mostrar por defecto: el del próximo riego proyectado.
+ * Si el plan dice que el que viene es intermedio, mostrar las dosis del
+ * completo sería ofrecer números que no corresponden.
+ */
+function tipoSugerido(cultivo) {
+  const prox = (cultivo?.ciclo_activo?.riegos_programados || []).find((r) => r.fecha >= hoyISO());
+  return prox?.tipo || 'completo';
+}
 
-  const { dosis, notas } = dosisOrdenadas(cultivo, fase);
-  if (!dosis.length) return null;
+function pintarMezcla(cultivo, fase, tipo, alCambiarTipo) {
+  if (!fase) return null;
 
-  const s = seccion(`Mezcla · fase ${fase.id}`);
+  const receta = recetaDe(cultivo, fase, tipo);
+  const s = seccion('Mezcla');
+
+  // Selector de tipo. Va primero y no como detalle: la regla r13 dice que la
+  // interfaz tiene que distinguir el tipo ANTES de mostrar números, porque el
+  // intermedio no lleva sales y no es media dosis de nada.
+  const tipos = tiposDeRiego(cultivo);
+  if (tipos.length > 1) {
+    const seg = el('div', 'segmento');
+    for (const t of tipos) {
+      const b = el('button', `seg-b${t === tipo ? ' activo' : ''}`, t);
+      b.type = 'button';
+      b.addEventListener('click', () => alCambiarTipo(t));
+      seg.append(b);
+    }
+    s.append(seg);
+  }
+
+  s.append(el('p', 'mezcla-fase', `Fase ${fase.id} · ${fase.nombre}`));
+
+  if (!receta.declarado) {
+    s.append(el('p', 'vacio', `cultivo.json no declara qué lleva un riego "${tipo}".`));
+    return s;
+  }
+
+  // Sin dosis: es agua, o una fórmula fija que no depende de la fase.
+  if (!receta.dosis.length) {
+    const caja = el('div', 'sin-dosis');
+    caja.append(el('p', 'sin-dosis-t', receta.formulaFija || 'Solo agua, sin aditivos.'));
+    if (receta.ph) caja.append(el('p', 'sin-dosis-p', `pH de entrada ${rango(receta.ph)}`));
+    s.append(caja);
+    if (receta.nota) s.append(el('p', 'mezcla-nota', receta.nota));
+    return s;
+  }
+
+  const dosis = receta.dosis;
+  const notas = receta.notas;
   const total = totalMezcla(cultivo, fase);
 
   // Punto de partida: lo que dan las macetas de esta fase. Pero el que manda es
@@ -225,13 +269,14 @@ function pintarMezcla(cultivo, fase) {
   recalcular();
 
   for (const n of notas) s.append(el('p', 'mezcla-nota', n));
+  if (receta.nota) s.append(el('p', 'mezcla-nota', receta.nota));
 
   // El agua ya trae EC. Sin esto, el objetivo de la fase se lee como si fuera
   // aporte de nutrientes y la mezcla termina por encima de lo buscado.
   const agua = aguaBase(cultivo);
-  if (agua) {
+  if (agua && receta.ec) {
     s.append(
-      el('p', 'mezcla-agua', `El agua ya aporta EC ${agua.ec}. El objetivo ${rango(fase.ec_objetivo)} es EC total medida en el tanque, no lo que suman los productos.`)
+      el('p', 'mezcla-agua', `El agua ya aporta EC ${agua.ec}. El objetivo ${rango(receta.ec)} es EC total medida en el tanque, no lo que suman los productos.`)
     );
   }
 
@@ -577,6 +622,10 @@ function pintarRegistros(lista, sinSubir) {
 
 // ---------- render ----------
 
+// Tipo de riego elegido en la mezcla. Vive fuera del render para sobrevivir a
+// un redibujado; en null manda lo que proyecta el plan.
+let tipoElegido = null;
+
 export async function render(main) {
   main.textContent = '';
   const aviso = cargando('Leyendo el cultivo…');
@@ -639,7 +688,10 @@ export async function render(main) {
 
   const partes = [
     pintarCiclo(ciclo, fase, diaDeCiclo(cultivo), marca),
-    pintarMezcla(cultivo, fase),
+    pintarMezcla(cultivo, fase, tipoElegido || tipoSugerido(cultivo), (t) => {
+      tipoElegido = t;
+      render(main);
+    }),
     pintarAmbiente(fase),
     pintarRiego(cultivo, ultimo),
     pintarProyeccion(cultivo, sub?.resumen, ultimo),
