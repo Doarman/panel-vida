@@ -540,6 +540,40 @@ body[data-seccion="rumbo"] {
 /* fuera de una tarjeta las fichas no necesitan margen de arranque */
 .bloque > .chips { margin-top: 0; }
 
+/* ---------- secado ---------- */
+/* El contador arranca en el último riego registrado, no en el calendario. */
+
+.secado {
+  padding: 16px 17px 18px;
+  border: 1px solid var(--linea);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(var(--luz), 0.09), rgba(var(--luz), 0.025));
+}
+
+.secado.ventana { border-color: rgba(var(--luz), 0.4); }
+.secado.pasado { border-color: rgba(240, 134, 110, 0.4); }
+
+.secado-d {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.secado .barra { margin: 14px 0 0; }
+.secado.pasado .barra i { background: var(--mal); }
+
+.secado-l { margin: 12px 0 0; font-size: 13.5px; color: var(--mudo); line-height: 1.45; }
+
+.secado-p {
+  margin: 12px 0 0;
+  font-size: 15.5px;
+  font-weight: 500;
+  color: var(--acento);
+}
+
+.secado.pasado .secado-p { color: var(--mal); }
+
 .proy { margin: 0; padding: 0; list-style: none; }
 
 .proy li {

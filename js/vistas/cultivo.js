@@ -17,7 +17,7 @@ import {
   hoyISO, dias, fecha, cuando, rango,
   faseDe, diaDeCiclo, nombreDe, infoProducto,
   dosisOrdenadas, totalMezcla, productosDeLaFase,
-  ordenDeLaFase, aguaBase,
+  ordenDeLaFase, aguaBase, estadoDeSecado, fechaCorta,
 } from '../cultivo-datos.js';
 
 // ---------- fichas de dato ----------
@@ -245,6 +245,67 @@ function pintarMezcla(cultivo, fase) {
 
 // ---------- proyección ----------
 
+/**
+ * El riego, contado desde el último que registraste y no desde el calendario.
+ *
+ * Una fecha del plan dice cuándo estaba previsto regar. Eso no responde la
+ * pregunta real, que es si el sustrato se secó. El ciclo de secado medido de
+ * este grupo sí se acerca: dice cuántos días suele tardar. Con eso la app
+ * puede decir en qué día vas y devolver la pregunta, que es todo lo que
+ * legítimamente puede hacer (r8).
+ */
+function pintarRiego(cultivo, ultimoRiego) {
+  const sec = estadoDeSecado(cultivo, ultimoRiego);
+  const prox = (cultivo?.ciclo_activo?.riegos_programados || []).find((r) => r.fecha >= hoyISO());
+
+  const s = seccion('Riego');
+
+  if (!sec) {
+    const p = el('p', 'vacio', ultimoRiego
+      ? 'Sin ciclo de secado declarado para este grupo.'
+      : 'Todavía no registraste ningún riego. El contador arranca con el primero.');
+    s.append(p);
+    if (prox) s.append(el('p', 'pie', `El plan proyecta ${cuando(prox.fecha)} · ${prox.tipo}.`));
+    return s;
+  }
+
+  const caja = el('div', `secado ${sec.fase}`);
+
+  caja.append(
+    el('p', 'secado-d',
+      sec.transcurridos === 0
+        ? `Regado hoy · secado de ${sec.min} a ${sec.max} días`
+        : `Día ${sec.transcurridos} de un secado de ${sec.min} a ${sec.max}`)
+  );
+
+  const barra = el('div', 'barra');
+  const relleno = el('i');
+  barra.append(relleno);
+  caja.append(barra);
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      relleno.style.width = `${sec.pct.toFixed(1)}%`;
+    })
+  );
+
+  const leyenda =
+    sec.fase === 'antes'
+      ? `La ventana se abre el ${fechaCorta(sec.abre)} y se cierra el ${fechaCorta(sec.cierra)}.`
+      : sec.fase === 'ventana'
+        ? `Dentro de la ventana proyectada, hasta el ${fechaCorta(sec.cierra)}.`
+        : `Pasó la ventana proyectada, que se cerraba el ${fechaCorta(sec.cierra)}.`;
+  caja.append(el('p', 'secado-l', leyenda));
+
+  caja.append(el('p', 'secado-p', '¿Cómo pesa la maceta?'));
+  s.append(caja);
+
+  const pie = [`Último registro: ${fecha(ultimoRiego)}`];
+  if (prox) pie.push(`el plan proyecta ${fechaCorta(prox.fecha)} · ${prox.tipo}`);
+  s.append(el('p', 'pie', pie.join(' · ')));
+
+  return s;
+}
+
 function pintarProyeccion(cultivo, resumen, ultimoRiego) {
   const s = seccion('Proyección');
   const ul = el('ul', 'proy');
@@ -259,18 +320,6 @@ function pintarProyeccion(cultivo, resumen, ultimoRiego) {
     ul.append(li);
   };
 
-  const prox = (cultivo?.ciclo_activo?.riegos_programados || []).find((r) => r.fecha >= hoy);
-  if (prox) {
-    fila('Riego', `${cuando(prox.fecha)} · ${prox.tipo}`,
-      'Lo decide el peso de la maceta, no la fecha (r8).');
-  } else {
-    fila('Riego', 'sin riegos proyectados');
-  }
-
-  fila('Último riego',
-    ultimoRiego ? `${fecha(ultimoRiego)} · ${cuando(ultimoRiego)}` : 'sin registro',
-    ultimoRiego ? null : 'Todavía no cargaste ninguno desde acá.');
-
   const hito = (cultivo?.ciclo_activo?.hitos || []).find(
     (h) => h.fecha >= hoy && h.estado !== 'hecho'
   );
@@ -280,6 +329,7 @@ function pintarProyeccion(cultivo, resumen, ultimoRiego) {
   const corte = cultivo?.ciclo_activo?.fecha_corte_estimada;
   if (corte) fila('Corte estimado', fecha(corte), 'Lo define la lupa 60x, nunca el calendario (r7).');
 
+  if (!ul.children.length) return null; // el riego tiene sección propia
   s.append(ul);
   return s;
 }
@@ -399,15 +449,17 @@ function pintarFormulario(cultivo, fase, alRegistrar) {
   }
   campo(campos, '', 'Tipo', '', fTipo);
 
-  // Los rangos de la fase van como referencia al lado del campo, nunca
-  // precargados: vos medís y cargás lo que medís.
-  const fEc = input('r-ec', 'number', { step: '0.01', inputMode: 'decimal' });
+  // step="any" a propósito: con un paso fijo, el navegador rechaza los valores
+  // que no caen en su grilla, y la app terminaría aceptando solo lo que espera
+  // en vez de lo que mediste. Relevar datos crudos significa que el número que
+  // entra es el tuyo, aunque se salga del plan.
+  const fEc = input('r-ec', 'number', { step: 'any', inputMode: 'decimal' });
   campo(campos, '', 'EC medida', fase ? `obj. ${rango(fase.ec_objetivo)}` : '', fEc);
 
-  const fPh = input('r-ph', 'number', { step: '0.1', inputMode: 'decimal' });
+  const fPh = input('r-ph', 'number', { step: 'any', inputMode: 'decimal' });
   campo(campos, '', 'pH', fase ? `obj. ${rango(fase.ph_entrada)}` : '', fPh);
 
-  const fLitros = input('r-litros', 'number', { step: '0.5', inputMode: 'decimal' });
+  const fLitros = input('r-litros', 'number', { step: 'any', inputMode: 'decimal' });
   campo(campos, 'ancho', 'Litros por maceta',
     fase ? `plan ${rango(fase.volumen_por_maceta_l)}` : '', fLitros);
 
@@ -424,14 +476,14 @@ function pintarFormulario(cultivo, fase, alRegistrar) {
   extra.append(el('summary', null, 'Más datos'));
   const campos2 = el('div', 'campos');
 
-  const fPpfd = input('r-ppfd', 'number', { step: '10', inputMode: 'numeric' });
+  const fPpfd = input('r-ppfd', 'number', { step: 'any', inputMode: 'decimal' });
   campo(campos2, 'ancho', 'PPFD',
     fase ? (fase.ppfd_techo ? `techo ${fase.ppfd_techo}` : `ref. ${fase.ppfd ?? '—'}`) : '', fPpfd);
 
-  const fTmin = input('r-tmin', 'number', { step: '0.5', inputMode: 'decimal' });
+  const fTmin = input('r-tmin', 'number', { step: 'any', inputMode: 'decimal' });
   campo(campos2, '', 'Temp mínima', fase ? `${rango(fase.ambiente?.temp_oscuridad_c)}°` : '', fTmin);
 
-  const fTmax = input('r-tmax', 'number', { step: '0.5', inputMode: 'decimal' });
+  const fTmax = input('r-tmax', 'number', { step: 'any', inputMode: 'decimal' });
   campo(campos2, '', 'Temp máxima', fase ? `${rango(fase.ambiente?.temp_luz_c)}°` : '', fTmax);
 
   extra.append(campos2);
@@ -481,6 +533,7 @@ function pintarFormulario(cultivo, fase, alRegistrar) {
   // código: si viven únicamente adentro, se cumplen por casualidad.
   const reglas = el('ul', 'reglas-carga');
   for (const r of [
+    'Los campos aceptan el valor que hayas medido, aunque se salga del plan. Lo que se guarda es tu medición, no lo esperado.',
     'Lo que no mediste, dejalo vacío. Se guarda como "sin dato", nunca estimado.',
     'La observación va cruda: describí lo que ves, no lo que suponés. Interpretar viene después y con más datos.',
     'Los registros no se editan. Si hay una corrección, se carga una entrada nueva.',
@@ -584,6 +637,7 @@ export async function render(main) {
     pintarCiclo(ciclo, fase, diaDeCiclo(cultivo), marca),
     pintarMezcla(cultivo, fase),
     pintarAmbiente(fase),
+    pintarRiego(cultivo, ultimo),
     pintarProyeccion(cultivo, sub?.resumen, ultimo),
     pintarGrupos(cultivo),
     pintarPrevisto(fase),

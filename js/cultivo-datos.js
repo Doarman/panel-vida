@@ -165,6 +165,47 @@ export function ordenDeLaFase(cultivo, dosis) {
   });
 }
 
+export function sumarDias(iso, n) {
+  const t = Date.parse(`${iso}T00:00:00Z`);
+  if (Number.isNaN(t)) return null;
+  return new Date(t + n * 86400000).toISOString().slice(0, 10);
+}
+
+export function grupoActivo(cultivo) {
+  return (cultivo?.grupos || []).find((g) => g.id === cultivo?.ciclo_activo?.grupo) || null;
+}
+
+/**
+ * Dónde está parado el secado del sustrato.
+ *
+ * El ancla es el último riego REGISTRADO, no el calendario. Esa es la
+ * diferencia que importa: una fecha del plan dice cuándo estaba previsto
+ * regar; esto dice cuántos días lleva secándose de verdad, contra el ciclo de
+ * secado medido de este grupo.
+ *
+ * Sigue siendo una proyección. El secado real depende de la maceta, del clima
+ * y de la planta, y por eso lo único que la app puede hacer es decir en qué
+ * día vas y devolver la pregunta.
+ */
+export function estadoDeSecado(cultivo, ultimaFecha, hoy = hoyISO()) {
+  const secado = grupoActivo(cultivo)?.ciclo_secado_dias;
+  if (!ultimaFecha || !Array.isArray(secado) || secado.length !== 2) return null;
+
+  const [min, max] = secado;
+  const transcurridos = dias(ultimaFecha, hoy);
+  if (transcurridos == null || transcurridos < 0) return null;
+
+  return {
+    transcurridos,
+    min,
+    max,
+    abre: sumarDias(ultimaFecha, min),
+    cierra: sumarDias(ultimaFecha, max),
+    pct: Math.max(0, Math.min(100, (transcurridos / max) * 100)),
+    fase: transcurridos < min ? 'antes' : transcurridos <= max ? 'ventana' : 'pasado',
+  };
+}
+
 /** Aporte de EC del agua antes de agregar nada. Cambia cómo se lee el objetivo. */
 export function aguaBase(cultivo) {
   const a = cultivo?.sitio?.agua;
