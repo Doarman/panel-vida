@@ -14,13 +14,17 @@
   /* tinta */
   --pv-tinta: #14212d;   /* títulos y datos */
   --pv-tinta2: #5a6b7b;  /* cuerpo */
-  --pv-tinta3: #6e7f8e;  /* micro, rótulos, ratios — piso de legibilidad, no aclarar */
+  /* Micro, rótulos y ratios. El handoff proponía #6e7f8e por dar 4.4:1 sobre
+     blanco, pero los rótulos de sección van sobre el FONDO, no sobre una
+     tarjeta, y ahí caía a 3.87:1. Oscurecido hasta despegar 4.5:1 en las dos
+     superficies: es el texto de 11px que hay que leer a las 6 de la mañana. */
+  --pv-tinta3: #637280;
 
   /* un acento por sección */
   --pv-cielo: #2e86c8;  --pv-cielo-s: #dfedfa;
   --pv-sol: #9a6710;    --pv-sol-s: #fbedd3;
   --pv-sol-d: #c4841a;  /* solo el dato grande y el relleno de botón */
-  --pv-brote: #2e9c6e;  --pv-brote-s: #dcf1e7;
+  --pv-brote: #2c9469;  --pv-brote-s: #dcf1e7;  /* apenas más oscuro: 2.92 no llegaba a 3:1 */
   --pv-rumbo: #6a67ce;  --pv-rumbo-s: #e7e6fb;
   --pv-alerta: #b4530f;
   --pv-mal: #c0392b;
@@ -57,7 +61,7 @@
 
   --pv-tinta: #e8eff6;
   --pv-tinta2: #a2b1c0;
-  --pv-tinta3: #6c7e90;
+  --pv-tinta3: #7b90a4;  /* aclarado: #6c7e90 daba 3.70:1 sobre la tarjeta */
 
   --pv-cielo: #74b8e8;  --pv-cielo-s: #1d3040;
   --pv-sol: #e0ac4e;    --pv-sol-s: #33291a;
@@ -644,6 +648,7 @@ body[data-seccion="rumbo"] { --w-seccion: var(--pv-w-rum); }
 .reglas li { padding: 13px 0; font-size: 14px; line-height: 1.5; color: var(--pv-tinta2); }
 .reglas li + li { border-top: 1px solid var(--pv-linea); }
 .reglas b { color: var(--pv-tinta); font-weight: 700; }
+.reglas li.critica { color: var(--pv-tinta); }
 .reglas small { display: block; margin-top: 4px; font-size: 12px; color: var(--pv-tinta3); }
 
 .registros { margin: 0; padding: 0; list-style: none; }
@@ -844,6 +849,7 @@ body[data-seccion] .btn-sec { color: var(--pv-tinta2); }
 .chequeos { margin: 0; padding: 0; list-style: none; }
 .chequeos li { display: flex; align-items: baseline; gap: 10px; padding: 12px 0; font-size: 14.5px; }
 .chequeos li + li { border-top: 1px solid var(--pv-linea); }
+.chequeos .txt { flex: none; }
 .chequeos .ico { width: 16px; flex: none; color: var(--pv-tinta3); }
 .chequeos li.ok .ico { color: var(--pv-brote); }
 .chequeos li.mal .ico { color: var(--pv-mal); }

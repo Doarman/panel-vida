@@ -16,11 +16,6 @@ const PREFIJO = 'pv.cache.';
 const memoria = new Map();
 const TTL = 90_000;
 
-/** Fuerza la próxima lectura a ir a la red. Después de escribir algo. */
-export function invalidar(clave) {
-  if (clave) memoria.delete(clave);
-  else memoria.clear();
-}
 
 export function guardar(clave, datos) {
   try {
