@@ -17,6 +17,7 @@ import {
   hoyISO, dias, fecha, cuando, rango,
   faseDe, diaDeCiclo, nombreDe, infoProducto,
   dosisOrdenadas, totalMezcla, productosDeLaFase,
+  ordenDeLaFase, aguaBase,
 } from '../cultivo-datos.js';
 
 // ---------- fichas de dato ----------
@@ -225,8 +226,19 @@ function pintarMezcla(cultivo, fase) {
 
   for (const n of notas) s.append(el('p', 'mezcla-nota', n));
 
-  const orden = cultivo?.orden_de_mezcla || [];
-  if (orden.length) s.append(el('p', 'pie', `Orden: ${orden.join(' → ')}`));
+  // El agua ya trae EC. Sin esto, el objetivo de la fase se lee como si fuera
+  // aporte de nutrientes y la mezcla termina por encima de lo buscado.
+  const agua = aguaBase(cultivo);
+  if (agua) {
+    s.append(
+      el('p', 'mezcla-agua', `El agua ya aporta EC ${agua.ec}. El objetivo ${rango(fase.ec_objetivo)} es EC total medida en el tanque, no lo que suman los productos.`)
+    );
+  }
+
+  // Solo los pasos que corresponden a esta fase: el orden completo del ciclo
+  // incluye productos que hoy no van.
+  const pasos = ordenDeLaFase(cultivo, dosis);
+  if (pasos.length) s.append(el('p', 'pie', `Orden: ${pasos.join(' → ')}`));
 
   return s;
 }
@@ -554,8 +566,14 @@ export async function render(main) {
   const ciclo = cultivo?.ciclo_activo;
   const fase = faseDe(cultivo);
 
+  // Los riegos históricos pueden venir con fecha null a propósito (hubo riego,
+  // pero no se registró la fecha). Esos no sirven para "último riego".
   const ultimo =
-    [...sinSubir, ...yaSubidos].map((r) => r.fecha).sort().pop() ||
+    [...sinSubir, ...yaSubidos]
+      .map((r) => r.fecha)
+      .filter(Boolean)
+      .sort()
+      .pop() ||
     sub?.resumen?.ultimo_riego ||
     null;
 

@@ -141,6 +141,37 @@ export function dosisOrdenadas(cultivo, fase) {
   return { dosis, notas };
 }
 
+/**
+ * El orden de mezcla, recortado a los productos que SÍ entran en esta fase.
+ *
+ * `orden_de_mezcla` es la secuencia de todo el ciclo: incluye PK Booster y
+ * Flora Booster, que en vegetativo no van. Mostrarla entera al lado de la
+ * receta del día se lee como si fueran parte de la mezcla de hoy, que es
+ * justo lo que no tiene que pasar.
+ *
+ * Se conservan siempre el primer paso (el agua) y el último (medir EC y pH),
+ * porque no son productos sino el principio y el final del procedimiento.
+ */
+export function ordenDeLaFase(cultivo, dosis) {
+  const orden = cultivo?.orden_de_mezcla || [];
+  if (!orden.length) return [];
+
+  const tokens = dosis.map((d) => d.clave.split('_')[0]);
+
+  return orden.filter((paso, i) => {
+    if (i === 0 || i === orden.length - 1) return true;
+    const p = paso.toLowerCase();
+    return tokens.some((t) => p.includes(t));
+  });
+}
+
+/** Aporte de EC del agua antes de agregar nada. Cambia cómo se lee el objetivo. */
+export function aguaBase(cultivo) {
+  const a = cultivo?.sitio?.agua;
+  if (!a || a.ec_ms_cm == null) return null;
+  return { ec: a.ec_ms_cm, nota: a.nota_critica || null, ph: a.ph_origen ?? null };
+}
+
 /** Litros totales de la tanda: cuántas macetas por cuántos litros cada una. */
 export function totalMezcla(cultivo, fase) {
   const grupo = (cultivo?.grupos || []).find((g) => g.id === cultivo?.ciclo_activo?.grupo);
