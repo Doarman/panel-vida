@@ -17,6 +17,7 @@ import {
 import { render as renderHoy } from './vistas/hoy.js';
 import { render as renderCultivo } from './vistas/cultivo.js';
 import { render as renderRumbo } from './vistas/rumbo.js';
+import { render as renderPlan } from './vistas/plan.js';
 
 const $ = (sel) => document.querySelector(sel);
 const main = $('#main');
@@ -156,15 +157,19 @@ const SECTORES = {
   rumbo: renderRumbo,
 };
 
+// Pantallas que no tienen pestaña propia: se llega a ellas desde adentro.
+// Cada una declara bajo qué pestaña queda marcada.
+const INTERNAS = { diagnostico: 'hoy', plan: 'cultivo' };
+
 function rutaActual() {
   const r = location.hash.replace(/^#\/?/, '');
   // `in` y no SECTORES[r]: un sector con vista propia vale null y sería falsy.
-  if (r in SECTORES || r === 'diagnostico') return r;
+  if (r in SECTORES || r in INTERNAS) return r;
   return 'hoy';
 }
 
 function marcarPestana(r) {
-  const activa = r in SECTORES ? r : 'hoy';
+  const activa = r in SECTORES ? r : INTERNAS[r] || 'hoy';
   document
     .querySelectorAll('.sector')
     .forEach((a) => a.classList.toggle('activo', a.dataset.r === activa));
@@ -174,8 +179,9 @@ async function rutear() {
   const r = rutaActual();
   marcarPestana(r);
   // Cada sección tiene su color; el CSS lo toma de acá. Además de dar vida,
-  // te dice dónde estás antes de leer nada.
-  document.body.dataset.seccion = r;
+  // te dice dónde estás antes de leer nada. Una pantalla interna hereda el
+  // color de la pestaña a la que pertenece: el plan sigue siendo cultivo.
+  document.body.dataset.seccion = r in SECTORES ? r : INTERNAS[r] || 'hoy';
   scrollTo(0, 0);
 
   if (r === 'diagnostico') {
@@ -196,6 +202,7 @@ async function rutear() {
     armarRenovacion();
   }
 
+  if (r === 'plan') return renderPlan(main);
   if (SECTORES[r]) return SECTORES[r](main);
 
   await renderHoy(main);

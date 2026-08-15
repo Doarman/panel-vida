@@ -14,6 +14,7 @@
 // hay señal, el dato no se pierde: queda pendiente y sube en el próximo intento.
 
 import { buscarArchivoPropio, crearJsonPropio, reemplazarJsonPropio, leerJsonDeDrive } from './api.js';
+import { hoyISO } from './cultivo-datos.js';
 
 const ARCHIVO = 'panel-vida-riegos.json';
 const PENDIENTES = 'pv.riegos.pendientes';
@@ -153,11 +154,19 @@ export async function sincronizar() {
   return { subidos: nuevos.length };
 }
 
-/** Guarda el riego en el teléfono y trata de subirlo. Nunca lo pierde. */
+/**
+ * Guarda el riego en el teléfono y trata de subirlo. Nunca lo pierde.
+ *
+ * El formato del registro lo define cultivo.json en registro_crudo.esquema:
+ * id con formato r-YYYY-MM-DD y fecha de carga en registrado_el. Se le agrega
+ * un sufijo corto al id porque el formato documentado se repite si hay dos
+ * riegos el mismo día, y la deduplicación al consolidar se hace por id.
+ */
 export async function registrar(riego) {
+  const sufijo = Math.random().toString(36).slice(2, 6);
   const entrada = {
-    id: `r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
-    registrado_en: new Date().toISOString(),
+    id: `r-${riego.fecha}-${sufijo}`,
+    registrado_el: hoyISO(),
     ...riego,
   };
 

@@ -724,6 +724,105 @@ body[data-seccion="rumbo"] {
 
 .mezcla-nota { margin: 11px 0 0; font-size: 13.5px; color: var(--alerta); }
 
+/* ---------- plan del ciclo ---------- */
+/* Denso a propósito: es para chequear el conjunto, no para operar. */
+
+.fase {
+  padding: 13px 14px;
+  margin-bottom: 7px;
+  border: 1px solid var(--linea-suave);
+  border-left: 3px solid var(--t-flexible);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.fase.flor { border-left-color: var(--acento); }
+.fase.actual { border-color: rgba(var(--luz), 0.45); background: rgba(var(--luz), 0.07); }
+
+.fase-h { display: flex; align-items: baseline; gap: 8px; }
+
+.fase-id {
+  flex: none;
+  min-width: 26px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--acento);
+}
+
+.fase-n { flex: 1; min-width: 0; font-size: 14.5px; font-weight: 600; }
+.fase-f { flex: none; font-size: 12px; color: var(--tenue); font-variant-numeric: tabular-nums; }
+
+.fase-d {
+  margin: 7px 0 0;
+  font-size: 13px;
+  color: var(--mudo);
+  font-variant-numeric: tabular-nums;
+}
+
+.fase-mix { margin: 5px 0 0; font-size: 12.5px; color: var(--texto); opacity: 0.75; }
+.fase-amb { margin: 4px 0 0; font-size: 12px; color: var(--tenue); }
+
+/* tabla liviana para los riegos proyectados */
+.tabla { margin: 0; padding: 0; list-style: none; }
+
+.tabla li {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--linea-suave);
+  font-size: 14px;
+}
+
+.tabla li:first-child { border-top: 0; padding-top: 0; }
+.tabla li.pasado { opacity: 0.4; }
+.tabla .tb-f { flex: none; width: 62px; font-variant-numeric: tabular-nums; }
+.tabla .tb-t { flex: 1; }
+.tabla .tb-x { flex: none; font-size: 12px; color: var(--tenue); }
+
+.pasos { margin: 0; padding-left: 20px; }
+.pasos li { padding: 5px 0; font-size: 14.5px; color: var(--mudo); }
+
+.reglas li.critica { color: var(--texto); }
+.reglas small { display: block; margin-top: 3px; font-size: 12.5px; color: var(--tenue); }
+
+.ficha-sub { margin: 4px 0 0; font-size: 13px; line-height: 1.45; color: var(--tenue); }
+
+/* enlace con aspecto de botón secundario */
+.boton-enlace {
+  display: block;
+  padding: 14px 18px;
+  margin-bottom: 13px;
+  border: 1px solid var(--linea);
+  border-radius: 16px;
+  color: var(--acento);
+  font-size: 15px;
+  font-weight: 500;
+  text-align: center;
+  text-decoration: none;
+  transition: background 0.2s var(--curva);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.boton-enlace:active { background: rgba(var(--luz), 0.08); }
+
+/* campos secundarios plegados */
+.mas { margin-top: 12px; }
+
+.mas summary {
+  padding: 8px 0;
+  font-size: 14px;
+  color: var(--acento);
+  cursor: pointer;
+  list-style: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mas summary::-webkit-details-marker { display: none; }
+.mas summary::before { content: "+ "; }
+.mas[open] summary::before { content: "− "; }
+.mas .campos { margin-top: 6px; }
+
 /* ---------- fichas (proyectos, formación) ---------- */
 
 .ficha { padding: 13px 0; border-top: 1px solid var(--linea-suave); }
