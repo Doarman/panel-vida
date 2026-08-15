@@ -380,11 +380,6 @@ function pintarFormulario(cultivo, fase, alRegistrar) {
   const aviso = el('p', 'nota oculto');
   form.append(boton, aviso);
 
-  // La regla del archivo: la observación se guarda cruda, sin interpretar.
-  s.append(
-    el('p', 'pie', 'La observación se guarda tal cual la escribís. Conviene describir lo que ves, no lo que suponés: la interpretación viene después y con más datos.')
-  );
-
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     boton.disabled = true;
@@ -419,6 +414,19 @@ function pintarFormulario(cultivo, fase, alRegistrar) {
   });
 
   s.append(form);
+
+  // Las reglas de carga que declara cultivo.json, a la vista y no solo en el
+  // código: si viven únicamente adentro, se cumplen por casualidad.
+  const reglas = el('ul', 'reglas-carga');
+  for (const r of [
+    'Lo que no mediste, dejalo vacío. Se guarda como "sin dato", nunca estimado.',
+    'La observación va cruda: describí lo que ves, no lo que suponés. Interpretar viene después y con más datos.',
+    'Los registros no se editan. Si hay una corrección, se carga una entrada nueva.',
+  ]) {
+    reglas.append(el('li', null, r));
+  }
+  s.append(reglas);
+
   return s;
 }
 

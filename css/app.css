@@ -941,6 +941,22 @@ body[data-seccion="rumbo"] {
 
 .registros .pend { color: var(--alerta); font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; }
 
+/* Las reglas de carga que declara cultivo.json. Van a la vista porque si viven
+   solo en el código se cumplen por casualidad. */
+.reglas-carga {
+  margin: 16px 0 0;
+  padding: 13px 15px 13px 30px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.028);
+}
+
+.reglas-carga li {
+  padding: 4px 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--tenue);
+}
+
 /* ---------- login ---------- */
 
 .card h2 { margin: 0 0 9px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }

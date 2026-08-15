@@ -93,6 +93,19 @@ export function venceEn() {
   return token ? token.expira_en : 0;
 }
 
+/**
+ * El token sigue sirviendo pero le queda poco.
+ *
+ * Se usa para renovar mientras estás usando la app, aprovechando un toque
+ * cualquiera, en vez de esperar a que venza y renovar justo cuando querés
+ * hacer algo. Renovar temprano no cuesta nada; renovar tarde se nota.
+ */
+export function porVencer(minutos = 12) {
+  if (!token) token = leerGuardado();
+  if (!token) return false;
+  return token.expira_en - Date.now() < minutos * 60_000;
+}
+
 /** Hubo consentimiento alguna vez: entonces reconectar es un toque, no un login. */
 export function yaOtorgado() {
   return leer(GRANT_KEY) === '1';
@@ -108,6 +121,11 @@ export async function iniciar() {
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: CONFIG.CLIENT_ID,
     scope: CONFIG.SCOPES,
+    // Sin `hint`, Google no sabe a qué cuenta apuntar y muestra el selector en
+    // cada renovación. Con la cuenta declarada y `select_account` en false, si
+    // ya diste permiso y la sesión sigue viva la renovación no muestra nada.
+    hint: CONFIG.CUENTA,
+    select_account: false,
     callback: () => {}, // se reemplaza en cada pedido
   });
 }
@@ -148,7 +166,7 @@ function pedirToken() {
     };
 
     try {
-      tokenClient.requestAccessToken({ prompt: '' });
+      tokenClient.requestAccessToken({ prompt: '', hint: CONFIG.CUENTA });
     } catch (e) {
       reject(e);
     }

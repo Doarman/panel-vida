@@ -13,6 +13,7 @@ import {
   yaOtorgado,
   ultimoMotivo,
   renovarAlPrimerGesto,
+  porVencer,
 } from './auth.js';
 import { render as renderHoy } from './vistas/hoy.js';
 import { render as renderCultivo } from './vistas/cultivo.js';
@@ -49,13 +50,29 @@ function pulso(estado) {
 }
 
 /** Deja armada la renovación silenciosa para el próximo toque en la pantalla. */
-function armarRenovacion() {
-  pulso('espera');
+function armarRenovacion({ redibujar = true } = {}) {
   renovarAlPrimerGesto((ok) => {
     marcar('sesion', ok ? 'ok' : 'mal', ultimoMotivo());
     pulso(ok ? 'ok' : 'mal');
-    if (ok) rutear(); // ya hay token: se redibuja con datos frescos
+    if (ok && redibujar) rutear(); // ya hay token: se redibuja con datos frescos
   });
+}
+
+/**
+ * Renueva antes de que haga falta.
+ *
+ * Si el token todavía sirve pero le queda poco, se aprovecha un toque
+ * cualquiera para renovarlo. Así la renovación cae en un momento en que no
+ * estás esperando nada, en vez de justo cuando querés registrar un riego.
+ */
+function cuidarSesion() {
+  if (!yaOtorgado()) return;
+  if (!tokenVigente()) {
+    pulso('espera');
+    armarRenovacion();
+  } else if (porVencer()) {
+    armarRenovacion({ redibujar: false });
+  }
 }
 
 let promptInstalar = null;
@@ -197,10 +214,8 @@ async function rutear() {
   // Con la sesión vencida no frenamos todo: si alguna vez diste permiso, se
   // dibuja con la copia local y el token se renueva con tu primer toque.
   // La pantalla de login queda solo para la primera vez.
-  if (!tokenVigente()) {
-    if (!yaOtorgado()) return pintarLogin();
-    armarRenovacion();
-  }
+  if (!tokenVigente() && !yaOtorgado()) return pintarLogin();
+  cuidarSesion();
 
   if (r === 'plan') return renderPlan(main);
   if (SECTORES[r]) return SECTORES[r](main);
@@ -250,13 +265,11 @@ async function arrancar() {
   await rutear();
 }
 
-// Al volver a la app después de un rato el token pudo vencer. No interrumpimos:
-// se arma la renovación para el próximo toque y la vista sigue con la copia local.
+// Al volver a la app después de un rato el token pudo vencer, o estar por
+// vencer. No interrumpimos: se arma la renovación para el próximo toque y la
+// vista sigue con la copia local mientras tanto.
 addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible') return;
-  if (tokenVigente() || !yaOtorgado()) return;
-  marcar('sesion', 'espera', 'token vencido, se renueva al tocar');
-  armarRenovacion();
+  if (document.visibilityState === 'visible') cuidarSesion();
 });
 
 arrancar();

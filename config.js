@@ -3,6 +3,11 @@
 export const CONFIG = {
   CLIENT_ID: '85762150808-hajffeif9igd2uspkb1v9nn7gv77l526.apps.googleusercontent.com',
 
+  // A qué cuenta apuntar. Sin esta pista Google no asume nada y muestra el
+  // selector de cuenta en cada renovación, aunque haya sesión activa y permiso
+  // ya otorgado. Con ella, la renovación no muestra nada.
+  CUENTA: 'nicoq172@gmail.com',
+
   // Los cuatro permisos declarados en Google Cloud.
   // drive.file es el único de escritura: solo alcanza archivos creados por esta app.
   SCOPES: [
