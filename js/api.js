@@ -139,38 +139,43 @@ export async function leerJsonDeDrive(fileId) {
   }
 }
 
-export function leerEstado() {
-  return leerJsonDeDrive(CONFIG.ESTADO_FILE_ID);
-}
-
 /**
- * Lee el archivo de un subsistema, y si el puntero quedó viejo lo busca por
- * nombre y sigue andando.
+ * Lee un JSON del ecosistema resolviéndolo por NOMBRE, no por ID.
  *
- * Pasó de verdad: Cowork reemplazó cultivo.json creando un archivo nuevo en vez
- * de editar el existente, y el `drive_file_id` de estado.json quedó apuntando a
- * un archivo borrado. La arquitectura de punteros no puede depender de que
- * nadie se equivoque nunca: si el ID no responde, se recurre al nombre.
+ * El conector de Drive que usa Claude no puede actualizar el contenido de un
+ * archivo: para cambiarlo tiene que reemplazarlo, y en el reemplazo el ID
+ * cambia sí o sí. Pasó con cultivo.json y con estado.json el mismo día.
  *
- * Igual es un parche, no la cura. Lo correcto es que estado.json quede con el
- * ID correcto; por eso `puntero_viejo` sale en el resultado, para poder avisar.
+ * Con esa herramienta, guardar un ID es guardar algo que va a vencer. El nombre
+ * del archivo, en cambio, es estable. Así que el nombre manda, y el ID queda
+ * solo como respaldo para el caso raro de que la búsqueda no devuelva nada.
  */
-export async function leerArchivoDeSubsistema({ archivoId, ruta }) {
-  if (archivoId) {
+async function leerJsonPorNombre(nombre, idDeRespaldo = null) {
+  let id = null;
+  if (nombre) {
     try {
-      return { datos: await leerJsonDeDrive(archivoId), puntero_viejo: false };
-    } catch (e) {
-      if (!/404|not found|no encontr/i.test(e.message)) throw e;
+      id = await buscarArchivoPropio(nombre);
+    } catch {
+      /* si la búsqueda falla, todavía queda el respaldo */
     }
   }
 
+  if (id) return leerJsonDeDrive(id);
+  if (idDeRespaldo) return leerJsonDeDrive(idDeRespaldo);
+  throw new Error(`No se encontró "${nombre}" en tu Drive.`);
+}
+
+export function leerEstado() {
+  return leerJsonPorNombre('estado.json', CONFIG.ESTADO_FILE_ID);
+}
+
+/** Archivo de datos de un subsistema, resuelto por su nombre de archivo. */
+export function leerArchivoDeSubsistema({ archivoId, ruta }) {
   const nombre = String(ruta || '').split('/').pop();
-  if (!nombre) throw new Error('El puntero de estado.json no responde y no hay ruta para buscar el archivo.');
-
-  const id = await buscarArchivoPropio(nombre);
-  if (!id) throw new Error(`El puntero de estado.json no responde y no se encontró "${nombre}" en Drive.`);
-
-  return { datos: await leerJsonDeDrive(id), puntero_viejo: true, idReal: id };
+  if (!nombre && !archivoId) {
+    throw new Error('estado.json no declara ni ruta ni ID para este subsistema.');
+  }
+  return leerJsonPorNombre(nombre, archivoId);
 }
 
 // ---------- escritura en Drive ----------
@@ -183,16 +188,20 @@ const DRIVE = 'https://www.googleapis.com/drive/v3/files';
 const SUBIDA = 'https://www.googleapis.com/upload/drive/v3/files';
 
 /**
- * Busca un archivo por nombre y devuelve su ID, o null.
+ * Busca un archivo por nombre y devuelve el ID del más reciente, o null.
  *
  * Alcanza todo el Drive porque también tenemos drive.readonly; el permiso de
  * escritura sigue limitado a los archivos que creó la app (drive.file).
+ *
+ * Ordena por fecha de modificación para que, si por un momento conviven el
+ * archivo viejo y el nuevo, gane el nuevo.
  */
 export async function buscarArchivoPropio(nombre) {
   const u = new URL(DRIVE);
   u.search = new URLSearchParams({
     q: `name = '${nombre.replace(/'/g, "\\'")}' and trashed = false`,
-    fields: 'files(id,name)',
+    fields: 'files(id,name,modifiedTime)',
+    orderBy: 'modifiedTime desc',
     pageSize: '5',
   });
   const j = await pedir(u);

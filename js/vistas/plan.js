@@ -212,8 +212,7 @@ export async function render(main) {
     if (!sub?.archivoId && !sub?.ruta) {
       throw new Error('estado.json no apunta a ningún archivo de cultivo');
     }
-    const c = await conCache('cultivo', () => leerArchivoDeSubsistema(sub));
-    cultivo = c.datos.datos; // conCache envuelve; leerArchivoDeSubsistema también
+    cultivo = (await conCache('cultivo', () => leerArchivoDeSubsistema(sub))).datos;
   } catch (e) {
     aviso.remove();
     main.append(error('Plan', e));

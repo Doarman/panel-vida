@@ -17,9 +17,10 @@ export const CONFIG = {
     'https://www.googleapis.com/auth/drive.file',
   ].join(' '),
 
-  // Único ID que la app hardcodea. Todo lo demás se descubre desde acá:
-  // estado.json guarda el drive_file_id de cada subsistema.
-  ESTADO_FILE_ID: '1fi9DplzogB_gpnQG9qgZPtJuNT3qrhG3',
+  // Solo respaldo. Los archivos se resuelven por NOMBRE, porque el conector de
+  // Drive que usa Claude no puede editar contenido: reemplaza, y en cada
+  // reemplazo el ID cambia. Un ID guardado es un dato con fecha de vencimiento.
+  ESTADO_FILE_ID: '1gpUSFVPYXZL88QPjKedS27IHW9AsvFI3',
 
   CALENDAR_ID: 'primary',
   TZ: 'America/Argentina/Cordoba',

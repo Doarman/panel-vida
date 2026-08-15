@@ -474,13 +474,9 @@ export async function render(main) {
     }
 
     const c = await conCache('cultivo', () => leerArchivoDeSubsistema(sub));
-    const { datos: contenido, puntero_viejo } = c.datos;
-    cultivo = contenido;
+    cultivo = c.datos;
 
     if (!e.fresco || !c.fresco) marca = `Copia local · ${antiguedad(Math.min(e.ts, c.ts))}`;
-    else if (puntero_viejo) {
-      marca = 'El drive_file_id de estado.json apunta a un archivo borrado. Se encontró cultivo.json por nombre; conviene corregir el puntero.';
-    }
   } catch (e) {
     aviso.remove();
     const s = seccion('🌱 Cultivo');
