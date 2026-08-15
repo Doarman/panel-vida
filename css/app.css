@@ -198,10 +198,13 @@ body[data-seccion="rumbo"] { --w-seccion: var(--pv-w-rum); }
   line-height: 1.1;
 }
 
+/* El texto mide 17 px, pero el dedo necesita 44. El alto se consigue con
+   padding y se compensa con margen negativo, así el control es de verdad
+   tocable y el encabezado ocupa exactamente lo mismo que antes. */
 .fecha {
   display: block;
-  margin: 4px 0 0;
-  padding: 0;
+  margin: -10px 0 -14px;
+  padding: 14px 0;
   border: 0;
   background: none;
   color: var(--pv-tinta3);
@@ -214,6 +217,7 @@ body[data-seccion="rumbo"] { --w-seccion: var(--pv-w-rum); }
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
+
 
 .pulso {
   flex: none;
@@ -378,9 +382,9 @@ body[data-seccion="rumbo"] { --w-seccion: var(--pv-w-rum); }
 
 .ocultar {
   flex: none;
-  width: 34px;
-  height: 34px;
-  margin: -6px -8px 0 0;
+  width: 44px;
+  height: 44px;
+  margin: -11px -13px -11px 0; /* 44 de toque sin agrandar la fila */
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -459,6 +463,7 @@ body[data-seccion="rumbo"] { --w-seccion: var(--pv-w-rum); }
 
 .seg-b {
   flex: 1;
+  min-height: 44px; /* toque mínimo */
   padding: 10px 4px;
   border: 0;
   border-radius: 999px;
@@ -500,8 +505,8 @@ body[data-seccion="rumbo"] { --w-seccion: var(--pv-w-rum); }
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 34px;
-  margin: 14px 0 0;
+  height: 44px; /* la pista mide 10, pero el dedo necesita 44 */
+  margin: 10px 0 0;
   background: none;
   cursor: pointer;
   touch-action: none;
@@ -785,7 +790,17 @@ body[data-seccion="rumbo"] { --w-seccion: var(--pv-w-rum); }
 .campo input:focus, .campo select:focus, .campo textarea:focus { box-shadow: inset 0 0 0 2px var(--ac); }
 
 .mas { margin-top: 14px; }
-.mas summary { padding: 10px 0; font-size: 13.5px; font-weight: 600; color: var(--ac); cursor: pointer; list-style: none; }
+.mas summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px; /* toque mínimo */
+  padding: 6px 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ac);
+  cursor: pointer;
+  list-style: none;
+}
 .mas summary::-webkit-details-marker { display: none; }
 .mas summary::before { content: "+ "; }
 .mas[open] summary::before { content: "− "; }

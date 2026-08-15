@@ -1,4 +1,8 @@
 node_modules/
+# Playwright: se regeneran al correr las pruebas
+tests/e2e/.salida/
+tests/e2e/capturas/
+playwright-report/
 .DS_Store
 Thumbs.db
 *.log
