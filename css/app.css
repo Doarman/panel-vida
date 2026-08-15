@@ -905,15 +905,18 @@ body[data-seccion] .btn-sec { color: var(--pv-tinta2); }
 
 .sector.activo { background: var(--ac-s); color: var(--ac); }
 
-/* Glifos en CSS puro: sin librería de iconos, sin emoji. */
-.glifo { display: block; width: 14px; height: 14px; margin: 1px 0; box-sizing: border-box; }
-.g-hoy { border: 2.5px solid currentColor; border-radius: 50%; }
-.g-cultivo { border: 2.5px solid currentColor; border-radius: 2px 12px 2px 12px; transform: rotate(45deg); }
-.g-rumbo { width: 12px; height: 12px; border: 2.5px solid currentColor; border-radius: 2px; transform: rotate(45deg); }
+/* Emoji y no glifos de CSS: el handoff pedía formas dibujadas, pero a Nico le
+   resultan más reconocibles los emoji y ahí manda su lectura, no la mía.
+   Se atenúan cuando la sección está inactiva para que no compitan. */
+.emo {
+  display: block;
+  font-size: 19px;
+  line-height: 1.1;
+  opacity: 0.55;
+  transition: opacity 0.22s var(--curva), transform 0.22s var(--curva);
+}
 
-.sector.activo .g-hoy,
-.sector.activo .g-cultivo,
-.sector.activo .g-rumbo { background: currentColor; }
+.sector.activo .emo { opacity: 1; transform: translateY(-1px); }
 
 /* ---------- error visible ---------- */
 
