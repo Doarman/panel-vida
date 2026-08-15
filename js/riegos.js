@@ -19,7 +19,9 @@ const ARCHIVO = 'panel-vida-riegos.json';
 const PENDIENTES = 'pv.riegos.pendientes';
 const CACHE_ID = 'pv.riegos.fileId';
 
-const ESQUELETO = {
+// Función y no constante: devuelve un objeto nuevo cada vez, así nadie puede
+// terminar empujando riegos dentro del molde por una copia superficial.
+const esqueleto = () => ({
   _meta: {
     descripcion:
       'Riegos registrados desde la PWA Panel de Vida. Append-only. Para consolidar en ciclo_activo.riegos_ejecutados de cultivo.json.',
@@ -28,7 +30,7 @@ const ESQUELETO = {
     version: 1,
   },
   riegos: [],
-};
+});
 
 // ---------- cola local ----------
 
@@ -59,7 +61,7 @@ async function idDelArchivo(forzarBusqueda = false) {
   }
 
   let id = await buscarArchivoPropio(ARCHIVO);
-  if (!id) id = await crearJsonPropio(ARCHIVO, ESQUELETO);
+  if (!id) id = await crearJsonPropio(ARCHIVO, esqueleto());
 
   try {
     localStorage.setItem(CACHE_ID, id);
@@ -116,21 +118,32 @@ export async function sincronizar() {
   if (!cola.length) return { subidos: 0 };
 
   const nuevos = await conArchivo(async (id) => {
-    let actual;
-    try {
-      actual = await leerJsonDeDrive(id);
-    } catch (e) {
-      if (NO_EXISTE.test(e.message)) throw e; // que conArchivo lo recupere
-      actual = { ...ESQUELETO };
-    }
+    // Se lee siempre antes de escribir, y si la lectura falla se corta acá.
+    //
+    // Antes, ante un error que no fuera "no existe" (red cortada a mitad, un
+    // 500 de Google, la sesión vencida), se armaba una base vacía y se escribía
+    // encima: eso habría borrado todos los riegos ya subidos. Perder un intento
+    // de subida no cuesta nada —los pendientes quedan en el teléfono y se
+    // reintenta—, pero pisar el historial no se puede deshacer.
+    //
+    // El caso "no existe" lo resuelve conArchivo: busca o crea el archivo, que
+    // nace con el esqueleto, y reintenta.
+    const actual = await leerJsonDeDrive(id);
     if (!Array.isArray(actual.riegos)) actual.riegos = [];
 
     const yaEstan = new Set(actual.riegos.map((r) => r.id));
     const pendientesReales = cola.filter((r) => !yaEstan.has(r.id));
+    if (!pendientesReales.length) return [];
 
     actual.riegos.push(...pendientesReales);
     actual.riegos.sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
-    actual._meta = { ...ESQUELETO._meta, actualizado: new Date().toISOString() };
+
+    // Se conserva lo que haya escrito Cowork en _meta; solo se pisa la fecha.
+    actual._meta = {
+      ...esqueleto()._meta,
+      ...(actual._meta || {}),
+      actualizado: new Date().toISOString(),
+    };
 
     await reemplazarJsonPropio(id, actual);
     return pendientesReales;
