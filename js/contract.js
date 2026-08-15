@@ -22,13 +22,19 @@ export function mapaDeColores(estado) {
   return propio && typeof propio === 'object' ? propio : MAPA_POR_DEFECTO;
 }
 
+/** Qué hacer con un color que el mapa no contempla. estado.json puede fijarlo. */
+export function claseDefecto(estado) {
+  const d = estado?.calendario?.default;
+  return { tipo: d?.tipo || 'otro', etiqueta: d?.etiqueta || '' };
+}
+
 /** Clasifica un evento. Los que Google crea solo desde el correo van aparte. */
-export function clasificar(ev, mapa) {
+export function clasificar(ev, mapa, defecto = { tipo: 'otro', etiqueta: '' }) {
   if (ev?.eventType === 'fromGmail') {
     return { tipo: 'externo', etiqueta: 'Desde Gmail' };
   }
   const m = mapa[ev?.colorId];
-  return m ? { tipo: m.tipo || 'otro', etiqueta: m.etiqueta || '' } : { tipo: 'otro', etiqueta: '' };
+  return m ? { tipo: m.tipo || defecto.tipo, etiqueta: m.etiqueta || '' } : { ...defecto };
 }
 
 export function perfil(estado) {
@@ -51,6 +57,9 @@ export function subsistema(estado, clave) {
     archivoId: s.drive_file_id || null,
     // Ruta declarada del archivo. Es el respaldo cuando el ID queda viejo.
     ruta: s.archivo_datos || null,
+    // Dónde y cómo escribe la app. El contrato lo declara estado.json, así que
+    // el nombre del archivo de entrada no se hardcodea acá.
+    registro: s.registro || null,
     reglas: Array.isArray(s.reglas_criticas_para_el_asistente)
       ? s.reglas_criticas_para_el_asistente
       : [],

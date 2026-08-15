@@ -13,12 +13,31 @@
 // Todo riego se guarda PRIMERO en el teléfono y recién después se sube. Si no
 // hay señal, el dato no se pierde: queda pendiente y sube en el próximo intento.
 
-import { buscarArchivoPropio, crearJsonPropio, reemplazarJsonPropio, leerJsonDeDrive } from './api.js';
+import {
+  buscarArchivoPropio, buscarCarpeta, crearJsonPropio, reemplazarJsonPropio, leerJsonDeDrive,
+} from './api.js';
 import { hoyISO } from './cultivo-datos.js';
 
-const ARCHIVO = 'panel-vida-riegos.json';
+// Dónde escribe la app. El contrato lo declara estado.json en
+// subsistemas.cultivo.registro.archivo_entrada_app; esto es solo el valor por
+// defecto para cuando todavía no se leyó el estado.
+let ARCHIVO = 'riegos_registrados.json';
+let CARPETA = 'Cultivo';
+
+/** Toma la ruta declarada en estado.json. Ej: /Asistente Nico/Cultivo/x.json */
+export function usarArchivo(ruta) {
+  if (!ruta) return;
+  const partes = String(ruta).split('/').filter(Boolean);
+  const nombre = partes.pop();
+  if (!nombre) return;
+  ARCHIVO = nombre;
+  CARPETA = partes.pop() || null;
+}
+
 const PENDIENTES = 'pv.riegos.pendientes';
-const CACHE_ID = 'pv.riegos.fileId';
+// El ID cacheado se guarda por nombre de archivo: si el contrato cambia el
+// nombre, no se hereda el ID del archivo anterior.
+const claveId = () => `pv.riegos.fileId.${ARCHIVO}`;
 
 // Función y no constante: devuelve un objeto nuevo cada vez, así nadie puede
 // terminar empujando riegos dentro del molde por una copia superficial.
@@ -57,15 +76,27 @@ export function pendientes() {
 
 async function idDelArchivo(forzarBusqueda = false) {
   if (!forzarBusqueda) {
-    const cacheado = localStorage.getItem(CACHE_ID);
+    const cacheado = localStorage.getItem(claveId());
     if (cacheado) return cacheado;
   }
 
   let id = await buscarArchivoPropio(ARCHIVO);
-  if (!id) id = await crearJsonPropio(ARCHIVO, esqueleto());
+
+  if (!id) {
+    // Se intenta crearlo en la carpeta que declara el contrato. Si el scope no
+    // alcanza para esa carpeta, cae en la raíz y se encuentra igual: todo se
+    // resuelve por nombre.
+    let carpetaId = null;
+    if (CARPETA) {
+      try {
+        carpetaId = await buscarCarpeta(CARPETA);
+      } catch {}
+    }
+    id = await crearJsonPropio(ARCHIVO, esqueleto(), carpetaId);
+  }
 
   try {
-    localStorage.setItem(CACHE_ID, id);
+    localStorage.setItem(claveId(), id);
   } catch {}
   return id;
 }
@@ -87,7 +118,7 @@ async function conArchivo(accion) {
   } catch (e) {
     if (!NO_EXISTE.test(e.message)) throw e;
     try {
-      localStorage.removeItem(CACHE_ID);
+      localStorage.removeItem(claveId());
     } catch {}
     return accion(await idDelArchivo(true));
   }
@@ -95,7 +126,7 @@ async function conArchivo(accion) {
 
 /** Lo ya subido. Devuelve [] si el archivo todavía no existe. */
 export async function subidos() {
-  const id = localStorage.getItem(CACHE_ID);
+  const id = localStorage.getItem(claveId());
   if (!id) return [];
   try {
     const j = await leerJsonDeDrive(id);
@@ -103,7 +134,7 @@ export async function subidos() {
   } catch (e) {
     if (!NO_EXISTE.test(e.message)) throw e;
     try {
-      localStorage.removeItem(CACHE_ID);
+      localStorage.removeItem(claveId());
     } catch {}
     return [];
   }

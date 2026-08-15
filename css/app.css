@@ -22,11 +22,13 @@
   --mal: #f0866e;
   --ok: #79b8e8;
 
-  /* tipos de bloque */
+  /* tipos de bloque, según el mapa de colores de estado.json */
   --t-salud: #f2907a;
   --t-tesis: #79b8e8;
   --t-flexible: #7e8ca3;
   --t-profesional: #b49be0;
+  --t-formacion: #e8b563;
+  --t-trabajo: #6fd3c7;
   --t-externo: #4a5567;
   --t-otro: #64748b;
 
@@ -378,6 +380,8 @@ body[data-seccion="rumbo"] {
 .t-tesis { --tipo: var(--t-tesis); }
 .t-flexible { --tipo: var(--t-flexible); }
 .t-profesional { --tipo: var(--t-profesional); }
+.t-formacion { --tipo: var(--t-formacion); }
+.t-trabajo { --tipo: var(--t-trabajo); }
 .t-externo { --tipo: var(--t-externo); }
 .t-otro { --tipo: var(--t-otro); }
 

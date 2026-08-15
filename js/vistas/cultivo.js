@@ -9,7 +9,7 @@
 
 import { leerEstado, leerArchivoDeSubsistema } from '../api.js';
 import { subsistema } from '../contract.js';
-import { registrar, sincronizar, pendientes, subidos } from '../riegos.js';
+import { registrar, sincronizar, pendientes, subidos, usarArchivo } from '../riegos.js';
 import { el, seccion, cargando, itemOmitible, pieOmitidos } from '../ui.js';
 import { conCache, antiguedad } from '../cache.js';
 import { estaOmitido, omitir, restaurarTodo } from '../omitidos.js';
@@ -57,6 +57,56 @@ function pintarCiclo(ciclo, fase, dia, marca) {
   }
 
   if (marca) s.append(el('p', 'marca', marca));
+  return s;
+}
+
+/**
+ * Los grupos del cultivo, cada uno con su estado.
+ *
+ * Solo el grupo del ciclo activo tiene fases, riegos y mezcla; el resto existe
+ * pero todavía no tiene planificación propia. Mostrarlos separados evita la
+ * confusión de creer que lo que dice la pantalla aplica a todas las plantas.
+ */
+function pintarGrupos(cultivo) {
+  const grupos = cultivo?.grupos || [];
+  if (grupos.length < 2) return null;
+
+  const activo = cultivo?.ciclo_activo?.grupo;
+  const luminarias = cultivo?.luminarias || [];
+  const espacios = cultivo?.sitio?.espacios || [];
+  const nombreDeId = (lista, id) => lista.find((x) => x.id === id)?.nombre || id;
+
+  const s = seccion('Grupos');
+
+  for (const g of grupos) {
+    const f = el('div', 'ficha');
+
+    const cab = el('div', 'ficha-h');
+    cab.append(el('h3', 'ficha-t', g.nombre || g.id));
+    if (g.id === activo) cab.append(el('span', 'badge vivo', 'ciclo activo'));
+    f.append(cab);
+
+    const linea = [
+      g.cantidad_plantas != null ? `${g.cantidad_plantas} plantas` : null,
+      g.espacio ? nombreDeId(espacios, g.espacio) : null,
+      g.luminaria ? nombreDeId(luminarias, g.luminaria) : null,
+    ].filter(Boolean);
+    if (linea.length) f.append(el('p', 'ficha-d', linea.join(' · ')));
+
+    const estado2 = [
+      g.estado,
+      g.fecha_flip_planificada ? `flip ${fecha(g.fecha_flip_planificada)}` : 'sin fecha de flip',
+    ].filter(Boolean);
+    f.append(el('p', 'ficha-et', estado2.join(' · ')));
+
+    if (g.notas) f.append(el('p', 'ficha-sub', g.notas));
+
+    s.append(f);
+  }
+
+  s.append(
+    el('p', 'pie', 'La fase, la mezcla y los riegos de esta pantalla son del grupo con ciclo activo. Los demás todavía no tienen planificación propia.')
+  );
   return s;
 }
 
@@ -485,6 +535,10 @@ export async function render(main) {
     return;
   }
 
+  // Dónde escribir lo define el contrato, no el código.
+  const subRegistro = subsistema(estado, 'cultivo')?.registro;
+  usarArchivo(subRegistro?.archivo_entrada_app);
+
   let yaSubidos = [];
   try {
     await sincronizar();
@@ -513,6 +567,7 @@ export async function render(main) {
     pintarMezcla(cultivo, fase),
     pintarAmbiente(fase),
     pintarProyeccion(cultivo, sub?.resumen, ultimo),
+    pintarGrupos(cultivo),
     pintarPrevisto(fase),
     pintarAbiertos(cultivo, () => render(main)),
     pintarFormulario(cultivo, fase, () => render(main)),

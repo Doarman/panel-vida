@@ -152,6 +152,31 @@ function pintarSanidad(cultivo) {
   return s;
 }
 
+/** Grupos que todavía no se integraron. Están declarados y conviene verlos. */
+function pintarFuturos(cultivo) {
+  const lista = cultivo?.grupos_futuros || [];
+  if (!lista.length) return null;
+
+  const s = seccion('Todavía sin integrar');
+  for (const g of lista) {
+    const f = el('div', 'ficha');
+    const cab = el('div', 'ficha-h');
+    cab.append(el('h3', 'ficha-t', g.id));
+    if (g.estado) cab.append(el('span', 'badge lejos', g.estado));
+    f.append(cab);
+
+    const linea = [
+      g.cantidad_plantas != null ? `${g.cantidad_plantas} plantas` : null,
+      g.luminaria,
+      g.ingreso_a_sala_estimado ? `ingreso ${g.ingreso_a_sala_estimado}` : null,
+    ].filter(Boolean);
+    if (linea.length) f.append(el('p', 'ficha-d', linea.join(' · ')));
+    if (g.nota) f.append(el('p', 'ficha-sub', g.nota));
+    s.append(f);
+  }
+  return s;
+}
+
 function pintarMezclaOrden(cultivo) {
   const orden = cultivo?.orden_de_mezcla || [];
   if (!orden.length) return null;
@@ -230,6 +255,7 @@ export async function render(main) {
     pintarRiegos(cultivo),
     pintarHitos(cultivo),
     pintarSanidad(cultivo),
+    pintarFuturos(cultivo),
     pintarMezclaOrden(cultivo),
     pintarReglas(cultivo),
     pintarEstimados(cultivo),

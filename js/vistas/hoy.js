@@ -9,7 +9,7 @@
 
 import { CONFIG } from '../../config.js';
 import { eventosDeLaSemana, correoParaMirar, leerEstado } from '../api.js';
-import { mapaDeColores, clasificar, alertas } from '../contract.js';
+import { mapaDeColores, claseDefecto, clasificar, alertas } from '../contract.js';
 import { el, seccion, error as pintarError, cargando, itemOmitible, pieOmitidos } from '../ui.js';
 import { conCache, antiguedad } from '../cache.js';
 import { estaOmitido, omitir, restaurarTodo } from '../omitidos.js';
@@ -251,11 +251,12 @@ export async function render(main) {
 
   const estado = estRes.status === 'fulfilled' ? estRes.value.datos : null;
   const mapa = mapaDeColores(estado);
+  const defecto = claseDefecto(estado);
 
   if (evRes.status === 'fulfilled') {
     const items = evRes.value.datos
       .map(normalizar)
-      .map((i) => ({ ...i, clase: clasificar(i.ev, mapa) }))
+      .map((i) => ({ ...i, clase: clasificar(i.ev, mapa, defecto) }))
       .sort((a, b) => a.inicio - b.inicio);
 
     const porDia = new Map();

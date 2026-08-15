@@ -208,26 +208,57 @@ export async function buscarArchivoPropio(nombre) {
   return j.files?.[0]?.id || null;
 }
 
-/** Crea un JSON nuevo. Queda en la raíz del Drive: la app no puede elegir
- *  carpeta ajena con este scope, y no hace falta — estado.json lo referencia
- *  por ID, no por ubicación. */
-export async function crearJsonPropio(nombre, datos) {
-  const limite = 'lim' + Math.random().toString(36).slice(2);
-  const cuerpo =
-    `--${limite}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
-    JSON.stringify({ name: nombre, mimeType: 'application/json' }) +
-    `\r\n--${limite}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
-    JSON.stringify(datos, null, 2) +
-    `\r\n--${limite}--`;
-
-  const u = new URL(SUBIDA);
-  u.search = new URLSearchParams({ uploadType: 'multipart', fields: 'id' });
-  const j = await pedir(u, {
-    metodo: 'POST',
-    cuerpo,
-    tipo: `multipart/related; boundary=${limite}`,
+/** Carpeta por nombre. Los IDs de carpeta sí son estables: no se reemplazan. */
+export async function buscarCarpeta(nombre) {
+  const u = new URL(DRIVE);
+  u.search = new URLSearchParams({
+    q: `name = '${nombre.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+    fields: 'files(id,name)',
+    pageSize: '5',
   });
-  return j.id;
+  const j = await pedir(u);
+  return j.files?.[0]?.id || null;
+}
+
+/**
+ * Crea un JSON nuevo, en una carpeta si se indica.
+ *
+ * Con el scope drive.file no está garantizado poder crear dentro de una carpeta
+ * que la app no creó, así que si el intento con carpeta falla se reintenta sin
+ * ella: el archivo queda en la raíz y se encuentra igual, porque todo se
+ * resuelve por nombre.
+ */
+export async function crearJsonPropio(nombre, datos, carpetaId = null) {
+  const subir = async (parents) => {
+    const limite = 'lim' + Math.random().toString(36).slice(2);
+    const meta = { name: nombre, mimeType: 'application/json' };
+    if (parents) meta.parents = parents;
+
+    const cuerpo =
+      `--${limite}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+      JSON.stringify(meta) +
+      `\r\n--${limite}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+      JSON.stringify(datos, null, 2) +
+      `\r\n--${limite}--`;
+
+    const u = new URL(SUBIDA);
+    u.search = new URLSearchParams({ uploadType: 'multipart', fields: 'id' });
+    const j = await pedir(u, {
+      metodo: 'POST',
+      cuerpo,
+      tipo: `multipart/related; boundary=${limite}`,
+    });
+    return j.id;
+  };
+
+  if (carpetaId) {
+    try {
+      return await subir([carpetaId]);
+    } catch {
+      /* el scope no alcanzó para esa carpeta: va a la raíz */
+    }
+  }
+  return subir(null);
 }
 
 export async function reemplazarJsonPropio(fileId, datos) {
