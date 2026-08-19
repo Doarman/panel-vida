@@ -345,3 +345,55 @@ export function productosDeLaFase(cultivo, fase, tipo) {
   const { dosis } = recetaDe(cultivo, fase, tipo);
   return dosis.map((d) => infoProducto(cultivo, d.clave)?.id).filter(Boolean);
 }
+
+/**
+ * Observaciones de secado que Cowork ya consolidó dentro de cultivo.json.
+ *
+ * La app escribe en su buzón y Cowork las pasa a cultivo.json y vacía el buzón.
+ * Si la app leyera solo el buzón, cada consolidación le borraría la memoria y
+ * volvería a proyectar con el rango estimado. Se leen de las dos ubicaciones
+ * posibles porque el nombre exacto lo define Cowork, no esta app.
+ */
+export function secadosConsolidados(cultivo) {
+  const c = cultivo?.ciclo_activo?.secados_medidos ?? cultivo?.secados_medidos;
+  return Array.isArray(c) ? c : [];
+}
+
+/**
+ * Qué tipo de riego proponer, y por qué.
+ *
+ * El plan manda, salvo cuando choca con una regla del propio archivo. El caso
+ * real: el sustrato secó antes de lo previsto, entra un riego extra en la
+ * semana, y r11 dice que ese extra no puede ser un segundo fertirriego
+ * completo. Sin esto, la app ofrecía las dosis del completo dos veces seguidas.
+ *
+ * El alcance de r11 lo fija el archivo —"en floracion activa"— y no se amplía
+ * por cuenta propia: en vegetativo se avisa, pero decide Nico. Inventarle
+ * alcance a una regla agronómica no es tarea de una interfaz.
+ */
+export function tipoSugerido(cultivo, riegos = [], fase = null, hoy = hoyISO()) {
+  const prox = (cultivo?.ciclo_activo?.riegos_programados || []).find((r) => r.fecha >= hoy);
+  const delPlan = prox?.tipo || 'completo';
+
+  if (delPlan !== 'completo') return { tipo: delPlan, motivo: 'plan', aviso: null };
+
+  const ultimoCompleto = riegos
+    .filter((r) => r?.tipo === 'completo' && r.fecha)
+    .map((r) => r.fecha)
+    .sort()
+    .pop();
+
+  const transcurridos = ultimoCompleto ? dias(ultimoCompleto, hoy) : null;
+  if (transcurridos == null || transcurridos >= 7 || transcurridos < 0) {
+    return { tipo: delPlan, motivo: 'plan', aviso: null };
+  }
+
+  const enFloracion = fase?.tipo === 'floracion';
+  const texto =
+    `Hubo un fertirriego completo hace ${transcurridos} ${transcurridos === 1 ? 'día' : 'días'}. ` +
+    (enFloracion
+      ? 'La regla r11 no admite un segundo completo en la misma semana de floración.'
+      : 'La regla r11 pide un solo completo por semana en floración activa; en vegetativo no la fija el archivo.');
+
+  return { tipo: enFloracion ? 'intermedio' : delPlan, motivo: 'r11', aviso: texto };
+}

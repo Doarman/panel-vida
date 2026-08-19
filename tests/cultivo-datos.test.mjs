@@ -18,7 +18,7 @@ import assert from 'node:assert/strict';
 import {
   dosisOrdenadas, ordenDeLaFase, totalMezcla, productosDeLaFase,
   faseDe, diaDeCiclo, aguaBase, nombreDe, leerNutricion, rango,
-  recetaDe, tiposDeRiego, estadoDeSecado, secadoObservado,
+  recetaDe, tiposDeRiego, estadoDeSecado, secadoObservado, tipoSugerido, secadosConsolidados,
 } from '../js/cultivo-datos.js';
 
 const cultivo = {
@@ -48,6 +48,7 @@ const cultivo = {
       },
       {
         id: 'S6',
+        tipo: 'floracion',
         fecha_inicio: '2026-09-27',
         fecha_fin: '2026-10-03',
         nutricion: {
@@ -364,4 +365,65 @@ test('la observación de este riego se reconoce como ya seco', () => {
 test('secadoObservado sin datos no inventa un rango', () => {
   assert.equal(secadoObservado([]), null);
   assert.equal(secadoObservado([{ desde: null, dias: 3 }]), null);
+});
+
+// ---------- que tipo de riego proponer (reglas r11 y r2) ----------
+
+const conPlan = (programados) => ({
+  ...cultivo,
+  ciclo_activo: { ...cultivo.ciclo_activo, riegos_programados: programados },
+});
+
+test('sin riegos previos, manda el plan', () => {
+  const c = conPlan([{ fecha: '2026-08-22', tipo: 'completo', fase: 'V3' }]);
+  const s = tipoSugerido(c, [], fase('V1'), '2026-08-19');
+  assert.equal(s.tipo, 'completo');
+  assert.equal(s.aviso, null);
+});
+
+test('si el plan proyecta intermedio, se propone intermedio', () => {
+  const c = conPlan([{ fecha: '2026-08-30', tipo: 'intermedio', fase: 'S2' }]);
+  assert.equal(tipoSugerido(c, [], fase('V1'), '2026-08-19').tipo, 'intermedio');
+});
+
+test('en floracion no se propone un segundo completo en la misma semana (r11)', () => {
+  // El caso real: el sustrato seco antes, entra un riego extra en la semana.
+  const c = conPlan([{ fecha: '2026-09-30', tipo: 'completo', fase: 'S6' }]);
+  const previos = [{ fecha: '2026-09-27', tipo: 'completo' }];
+  const s = tipoSugerido(c, previos, fase('S6'), '2026-09-30');
+
+  assert.equal(s.tipo, 'intermedio', 'no un segundo completo');
+  assert.equal(s.motivo, 'r11');
+  assert.match(s.aviso, /hace 3 días/);
+});
+
+test('en vegetativo se avisa pero no se cambia: r11 rige en floracion', () => {
+  // El alcance lo fija el archivo. Inventarlo no es tarea de la interfaz.
+  const c = conPlan([{ fecha: '2026-08-19', tipo: 'completo', fase: 'V2' }]);
+  const s = tipoSugerido(c, [{ fecha: '2026-08-15', tipo: 'completo' }], fase('V1'), '2026-08-19');
+
+  assert.equal(s.tipo, 'completo', 'la decision queda de este lado');
+  assert.match(s.aviso, /hace 4 días/);
+});
+
+test('un completo de hace mas de una semana no dispara el aviso', () => {
+  const c = conPlan([{ fecha: '2026-09-30', tipo: 'completo', fase: 'S6' }]);
+  const s = tipoSugerido(c, [{ fecha: '2026-09-20', tipo: 'completo' }], fase('S6'), '2026-09-30');
+  assert.equal(s.aviso, null);
+});
+
+test('un intermedio previo no cuenta como carga de sales', () => {
+  const c = conPlan([{ fecha: '2026-09-30', tipo: 'completo', fase: 'S6' }]);
+  const s = tipoSugerido(c, [{ fecha: '2026-09-29', tipo: 'intermedio' }], fase('S6'), '2026-09-30');
+  assert.equal(s.tipo, 'completo');
+  assert.equal(s.aviso, null);
+});
+
+test('las mediciones consolidadas por Cowork se siguen encontrando', () => {
+  // Cowork vacia el buzon al consolidar. Sin leer cultivo.json, la app
+  // perderia la memoria del secado en cada consolidacion.
+  const dentro = { ciclo_activo: { secados_medidos: [{ desde: 'a', fecha: 'b', dias: 3 }] } };
+  assert.equal(secadosConsolidados(dentro).length, 1);
+  assert.equal(secadosConsolidados({ secados_medidos: [{ dias: 4 }] }).length, 1);
+  assert.deepEqual(secadosConsolidados({}), []);
 });

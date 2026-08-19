@@ -18,7 +18,7 @@ import {
   faseDe, diaDeCiclo, nombreDe, infoProducto,
   dosisOrdenadas, totalMezcla, productosDeLaFase,
   ordenDeLaFase, aguaBase, estadoDeSecado, fechaCorta,
-  recetaDe, tiposDeRiego,
+  recetaDe, tiposDeRiego, tipoSugerido, secadosConsolidados,
 } from '../cultivo-datos.js';
 
 // ---------- fichas de dato ----------
@@ -139,17 +139,7 @@ function cantidad(valor) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-/**
- * Qué tipo de riego mostrar por defecto: el del próximo riego proyectado.
- * Si el plan dice que el que viene es intermedio, mostrar las dosis del
- * completo sería ofrecer números que no corresponden.
- */
-function tipoSugerido(cultivo) {
-  const prox = (cultivo?.ciclo_activo?.riegos_programados || []).find((r) => r.fecha >= hoyISO());
-  return prox?.tipo || 'completo';
-}
-
-function pintarMezcla(cultivo, fase, tipo, alCambiarTipo) {
+function pintarMezcla(cultivo, fase, tipo, aviso, alCambiarTipo) {
   if (!fase) return null;
 
   const receta = recetaDe(cultivo, fase, tipo);
@@ -169,6 +159,10 @@ function pintarMezcla(cultivo, fase, tipo, alCambiarTipo) {
     }
     s.append(seg);
   }
+
+  // El porqué de la sugerencia, cuando no es simplemente lo que dice el plan.
+  // Se explica la regla y se deja la eleccion: la app no decide agronomia.
+  if (aviso) s.append(el('p', 'mezcla-aviso', aviso));
 
   s.append(el('p', 'mezcla-fase', `Fase ${fase.id} · ${fase.nombre}`));
 
@@ -653,9 +647,11 @@ function pintarRegistros(lista, sinSubir) {
 
 // ---------- render ----------
 
-// Tipo de riego elegido en la mezcla. Vive fuera del render para sobrevivir a
-// un redibujado; en null manda lo que proyecta el plan.
-let tipoElegido = null;
+// Tipo de riego elegido a mano. Vive fuera del render para sobrevivir a un
+// redibujado, pero atado al contexto en que se eligio: si cambia la fase o
+// entra un riego nuevo, la eleccion caduca y vuelve a mandar la sugerencia.
+// Antes quedaba pegada para siempre y tapaba lo que el plan proyectaba.
+let eleccion = null;
 
 export async function render(main) {
   main.textContent = '';
@@ -697,7 +693,11 @@ export async function render(main) {
   }
   const sinSubir = pendientes('riegos');
   const yaSubidos = enDrive.riegos;
-  const observaciones = [...enDrive.secados, ...pendientes('secados')];
+  const observaciones = [
+    ...secadosConsolidados(cultivo),
+    ...enDrive.secados,
+    ...pendientes('secados'),
+  ];
 
   aviso.remove();
 
@@ -716,13 +716,21 @@ export async function render(main) {
     sub?.resumen?.ultimo_riego ||
     null;
 
+  // La sugerencia mira el plan y las reglas del archivo. La eleccion a mano
+  // solo vale mientras no cambie la fase ni entre un riego nuevo.
+  const registrados = [...sinSubir, ...yaSubidos];
+  const sugerencia = tipoSugerido(cultivo, registrados, fase);
+  const contexto = `${fase?.id || '-'}|${ultimo || '-'}`;
+  if (eleccion && eleccion.para !== contexto) eleccion = null;
+  const tipo = eleccion?.tipo || sugerencia.tipo;
+
   const irAlPlan = el('a', 'boton-enlace', 'Ver el plan completo del ciclo →');
   irAlPlan.href = '#/plan';
 
   const partes = [
     pintarCiclo(ciclo, fase, diaDeCiclo(cultivo), marca),
-    pintarMezcla(cultivo, fase, tipoElegido || tipoSugerido(cultivo), (t) => {
-      tipoElegido = t;
+    pintarMezcla(cultivo, fase, tipo, sugerencia.aviso, (t) => {
+      eleccion = { tipo: t, para: contexto };
       render(main);
     }),
     pintarAmbiente(fase),

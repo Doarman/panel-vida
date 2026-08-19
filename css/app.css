@@ -936,3 +936,14 @@ body[data-seccion] .btn-sec { color: var(--pv-tinta2); }
 .secado.seco .barra i { background: var(--pv-brote); opacity: 1; }
 .secado.seco .secado-d { color: var(--pv-brote); }
 .secado + .btn { margin-top: 12px; }
+
+/* Por qué la sugerencia se aparta del plan. Explica la regla; no ordena. */
+.mezcla-aviso {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: var(--pv-r2);
+  background: var(--pv-sol-s);
+  color: var(--pv-sol);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
