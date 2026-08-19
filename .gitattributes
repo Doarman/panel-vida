@@ -1,0 +1,6 @@
+# El proyecto se sirve tal cual desde GitHub Pages, asi que los finales de
+# linea del repo y los del sitio publicado tienen que ser los mismos. Sin esto,
+# Windows convierte a CRLF en cada checkout y la comparacion byte a byte entre
+# lo local y lo desplegado deja de servir para verificar nada.
+* text=auto eol=lf
+*.png binary
