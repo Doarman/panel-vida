@@ -1,13 +1,16 @@
 {
   "name": "proyecto-alfred-tipazo",
   "version": "1.0.0",
-  "description": "PWA personal que nuclea agenda, correo y subsistemas leyendo **en vivo** de una cuenta de Google. Sin backend y sin base de datos propia: la cuenta de Google es la fuente de verdad.",
+  "description": "PWA personal: agenda, correo y subsistemas leidos en vivo de Google. Sin backend.",
   "main": "config.js",
   "directories": {
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test tests/cultivo-datos.test.mjs",
+    "e2e": "playwright test",
+    "qa": "node tools/qa.mjs",
+    "dev": "node tools/serve.mjs"
   },
   "repository": {
     "type": "git",
@@ -16,12 +19,13 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "bugs": {
     "url": "https://github.com/Doarman/panel-vida/issues"
   },
   "homepage": "https://github.com/Doarman/panel-vida#readme",
   "devDependencies": {
     "@playwright/test": "^1.62.1"
-  }
+  },
+  "private": true
 }

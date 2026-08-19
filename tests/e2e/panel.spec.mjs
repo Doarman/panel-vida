@@ -20,7 +20,11 @@ const json = (datos) => ({
   body: JSON.stringify(datos),
 });
 
-async function prepararGoogle(page) {
+async function prepararGoogle(page, { riegos = [], secados = [] } = {}) {
+  // El archivo que escribe la app se simula con estado: lo que la app sube
+  // queda guardado y se devuelve en la lectura siguiente. Sin eso no se puede
+  // probar el ciclo completo de anotar, subir y releer.
+  const archivo = { _meta: {}, riegos, secados };
   // Google Identity Services: un doble que no abre ningún popup.
   await page.route('https://accounts.google.com/gsi/client', (r) =>
     r.fulfill({
@@ -36,6 +40,14 @@ async function prepararGoogle(page) {
 
   await page.route('https://www.googleapis.com/**', (ruta) => {
     const u = new URL(ruta.request().url());
+
+    // Subida: la app reemplaza el archivo entero. Se guarda lo que mandó.
+    if (u.pathname.startsWith('/upload/drive/')) {
+      try {
+        Object.assign(archivo, JSON.parse(ruta.request().postData() || '{}'));
+      } catch {}
+      return ruta.fulfill(json({ id: 'FIXTURE-RIEGOS' }));
+    }
 
     if (u.pathname.startsWith('/calendar/')) return ruta.fulfill(json(EVENTOS));
 
@@ -54,7 +66,7 @@ async function prepararGoogle(page) {
     }
     if (u.pathname.includes('FIXTURE-ESTADO')) return ruta.fulfill(json(ESTADO));
     if (u.pathname.includes('FIXTURE-CULTIVO')) return ruta.fulfill(json(CULTIVO));
-    if (u.pathname.includes('FIXTURE-RIEGOS')) return ruta.fulfill(json({ riegos: [] }));
+    if (u.pathname.includes('FIXTURE-RIEGOS')) return ruta.fulfill(json(archivo));
 
     return ruta.fulfill(json({}));
   });
@@ -68,8 +80,8 @@ async function prepararGoogle(page) {
   });
 }
 
-async function ir(page, ruta = 'hoy', modo = 'dia') {
-  await prepararGoogle(page);
+async function ir(page, ruta = 'hoy', modo = 'dia', archivo = {}) {
+  await prepararGoogle(page, archivo);
   await page.addInitScript((m) => localStorage.setItem('pv.modo', m), modo);
   await page.goto(`/#/${ruta}`);
   await page.waitForFunction(() => !document.querySelector('.cargando'));
@@ -228,4 +240,33 @@ test('ninguna pantalla habla en imperativo', async ({ page }) => {
     const linea = texto.split('\n').find((l) => prohibido.test(l));
     expect(linea, `en la pantalla ${pantalla}`).toBeUndefined();
   }
+});
+
+test('anotar que se secó queda registrado y corrige la proyección', async ({ page }) => {
+  // Un riego de hace tres días: el plan del fixture proyecta un secado de 4 a 5.
+  const hace = (n) => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - n);
+    return d.toISOString().slice(0, 10);
+  };
+  const riego = { id: 'r-previo', fecha: hace(3), fase: 'V1', tipo: 'completo' };
+
+  await ir(page, 'cultivo', 'dia', { riegos: [riego] });
+
+  const caja = page.locator('.secado');
+  await expect(caja).toContainText('Día 3 de un secado de 4 a 5');
+
+  const boton = page.getByRole('button', { name: 'Ya se secó' });
+  await expect(boton).toBeVisible();
+  await boton.click();
+
+  // Queda anotado como hecho, no como tarea cumplida.
+  await expect(caja).toContainText('Se secó a los 3 días', { timeout: 5000 });
+  await expect(page.locator('.secado + .btn')).toHaveCount(0);
+
+  // Y la proyección pasa a apoyarse en lo medido, sin perder el dato del plan.
+  const pie = page.locator('.secado').locator('xpath=following-sibling::p[1]');
+  await expect(pie).toContainText('secado medido');
+  await expect(pie).toContainText('el archivo estima 4 a 5');
 });

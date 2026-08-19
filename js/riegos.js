@@ -41,15 +41,20 @@ const claveId = () => `pv.riegos.fileId.${ARCHIVO}`;
 
 // Función y no constante: devuelve un objeto nuevo cada vez, así nadie puede
 // terminar empujando riegos dentro del molde por una copia superficial.
+// Dos listas en el mismo archivo, las dos append-only. Los secados van acá y no
+// en un archivo aparte para que Cowork consolide en un solo movimiento.
+const LISTAS = ['riegos', 'secados'];
+
 const esqueleto = () => ({
   _meta: {
     descripcion:
-      'Riegos registrados desde la PWA Panel de Vida. Append-only. Para consolidar en ciclo_activo.riegos_ejecutados de cultivo.json.',
+      'Registros de la PWA Panel de Vida. Append-only. "riegos" se consolida en ciclo_activo.riegos_ejecutados; "secados" son observaciones de cuando el sustrato llego a seco, para corregir ciclo_secado_dias del grupo con dato medido en vez de estimado.',
     escribe: 'Panel de Vida (app movil)',
     consolida: 'Claude (Cowork)',
-    version: 1,
+    version: 2,
   },
   riegos: [],
+  secados: [],
 });
 
 // ---------- cola local ----------
@@ -68,8 +73,10 @@ function guardarPendientes(lista) {
   } catch {}
 }
 
-export function pendientes() {
-  return leerPendientes();
+/** Lo que todavía no subió. Con `lista`, solo lo de esa lista. */
+export function pendientes(lista = null) {
+  const todo = leerPendientes();
+  return lista ? todo.filter((e) => e._lista === lista) : todo;
 }
 
 // ---------- archivo en Drive ----------
@@ -124,19 +131,40 @@ async function conArchivo(accion) {
   }
 }
 
-/** Lo ya subido. Devuelve [] si el archivo todavía no existe. */
+const VACIO = { riegos: [], secados: [] };
+
+/**
+ * Lo ya subido, por lista. Devuelve listas vacías si el archivo no existe.
+ *
+ * Si no hay ID cacheado se busca por nombre, pero NO se crea el archivo: una
+ * lectura no debe tener efectos. Sin esta búsqueda, en un teléfono nuevo el
+ * historial se veía vacío hasta que registraras algo, porque el ID solo se
+ * guarda al escribir.
+ */
 export async function subidos() {
-  const id = localStorage.getItem(claveId());
-  if (!id) return [];
+  let id = localStorage.getItem(claveId());
+
+  if (!id) {
+    try {
+      id = await buscarArchivoPropio(ARCHIVO);
+    } catch {
+      return { ...VACIO };
+    }
+    if (!id) return { ...VACIO };
+    try {
+      localStorage.setItem(claveId(), id);
+    } catch {}
+  }
+
   try {
     const j = await leerJsonDeDrive(id);
-    return Array.isArray(j?.riegos) ? j.riegos : [];
+    return Object.fromEntries(LISTAS.map((l) => [l, Array.isArray(j?.[l]) ? j[l] : []]));
   } catch (e) {
     if (!NO_EXISTE.test(e.message)) throw e;
     try {
       localStorage.removeItem(claveId());
     } catch {}
-    return [];
+    return { ...VACIO };
   }
 }
 
@@ -161,14 +189,23 @@ export async function sincronizar() {
     // El caso "no existe" lo resuelve conArchivo: busca o crea el archivo, que
     // nace con el esqueleto, y reintenta.
     const actual = await leerJsonDeDrive(id);
-    if (!Array.isArray(actual.riegos)) actual.riegos = [];
 
-    const yaEstan = new Set(actual.riegos.map((r) => r.id));
-    const pendientesReales = cola.filter((r) => !yaEstan.has(r.id));
+    const pendientesReales = [];
+    for (const lista of LISTAS) {
+      if (!Array.isArray(actual[lista])) actual[lista] = [];
+
+      const yaEstan = new Set(actual[lista].map((r) => r.id));
+      // `_lista` es del transporte, no del registro: no viaja al archivo.
+      const nuevos = cola
+        .filter((e) => (e._lista || 'riegos') === lista && !yaEstan.has(e.id))
+        .map(({ _lista, ...datos }) => datos);
+      if (!nuevos.length) continue;
+
+      actual[lista].push(...nuevos);
+      actual[lista].sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+      pendientesReales.push(...nuevos);
+    }
     if (!pendientesReales.length) return [];
-
-    actual.riegos.push(...pendientesReales);
-    actual.riegos.sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
 
     // Se conserva lo que haya escrito Cowork en _meta; solo se pisa la fecha.
     actual._meta = {
@@ -194,11 +231,32 @@ export async function sincronizar() {
  * riegos el mismo día, y la deduplicación al consolidar se hace por id.
  */
 export async function registrar(riego) {
+  return encolar('riegos', `r-${riego.fecha}`, riego);
+}
+
+/**
+ * Anota que el sustrato llegó a seco.
+ *
+ * Es el dato que convierte `ciclo_secado_dias` de estimación en medición. No
+ * es una tarea que se cumple ni un aviso que se descarta: es una observación
+ * que Nico hizo levantando la maceta, y la única fuente de verdad sobre cuánto
+ * tarda de verdad en secar este grupo, en esta fase, con este clima.
+ *
+ * `desde` es la fecha del riego que arrancó ese secado: sin ese ancla, el
+ * número de días no se puede recalcular ni auditar después.
+ */
+export async function registrarSecado({ desde, fecha, dias, fase }) {
+  return encolar('secados', `s-${fecha}`, { desde, fecha, dias, fase });
+}
+
+/** Guarda en el teléfono primero y recién después intenta subir. */
+async function encolar(lista, prefijoId, datos) {
   const sufijo = Math.random().toString(36).slice(2, 6);
   const entrada = {
-    id: `r-${riego.fecha}-${sufijo}`,
+    _lista: lista,
+    id: `${prefijoId}-${sufijo}`,
     registrado_el: hoyISO(),
-    ...riego,
+    ...datos,
   };
 
   guardarPendientes([...leerPendientes(), entrada]);

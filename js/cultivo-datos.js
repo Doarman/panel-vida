@@ -245,21 +245,75 @@ export function grupoActivo(cultivo) {
  * y de la planta, y por eso lo único que la app puede hacer es decir en qué
  * día vas y devolver la pregunta.
  */
-export function estadoDeSecado(cultivo, ultimaFecha, hoy = hoyISO()) {
-  const secado = grupoActivo(cultivo)?.ciclo_secado_dias;
-  if (!ultimaFecha || !Array.isArray(secado) || secado.length !== 2) return null;
+/**
+ * Cuánto tarda en secar, según lo observado.
+ *
+ * Cada observación se ancla al riego que la disparó (`desde`), así que si Nico
+ * corrige una anotación queda la última de ese riego y no las dos: append-only
+ * en el archivo, pero corregible en pantalla.
+ *
+ * Se prefiere lo medido en la misma fase cuando alcanza, porque una planta en
+ * floración toma mucho más que en vegetativo y mezclarlas daría un promedio que
+ * no describe ninguna de las dos.
+ */
+export function secadoObservado(secados = [], faseId = null) {
+  const porRiego = new Map();
+  for (const s of secados) {
+    if (!s?.desde || typeof s.dias !== 'number') continue;
+    porRiego.set(s.desde, s); // el último de cada riego gana
+  }
 
-  const [min, max] = secado;
+  const todos = [...porRiego.values()].sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+  if (!todos.length) return null;
+
+  const deLaFase = faseId ? todos.filter((s) => s.fase === faseId) : [];
+  const usados = deLaFase.length ? deLaFase : todos;
+  const recientes = usados.slice(-4);
+  const valores = recientes.map((s) => s.dias);
+
+  return {
+    min: Math.min(...valores),
+    max: Math.max(...valores),
+    n: recientes.length,
+    mismaFase: deLaFase.length > 0,
+    ultimo: todos.at(-1),
+  };
+}
+
+/**
+ * Dónde está parado el secado.
+ *
+ * Si hay observaciones, el rango sale de ellas y el del archivo queda como
+ * referencia. El plan proyecta; la maceta corrige.
+ */
+export function estadoDeSecado(cultivo, ultimaFecha, { secados = [], faseId = null, hoy = hoyISO() } = {}) {
+  const plan = grupoActivo(cultivo)?.ciclo_secado_dias;
+  const medido = secadoObservado(secados, faseId);
+
+  const planOk = Array.isArray(plan) && plan.length === 2;
+  if (!ultimaFecha || (!planOk && !medido)) return null;
+
+  const min = medido ? medido.min : plan[0];
+  const max = medido ? medido.max : plan[1];
+
   const transcurridos = dias(ultimaFecha, hoy);
   if (transcurridos == null || transcurridos < 0) return null;
+
+  // La observación de ESTE secado, si ya la anotó.
+  const yaSeco = secados.find((s) => s?.desde === ultimaFecha) || null;
 
   return {
     transcurridos,
     min,
     max,
+    medido: Boolean(medido),
+    n: medido?.n ?? 0,
+    mismaFase: medido?.mismaFase ?? false,
+    plan: planOk ? { min: plan[0], max: plan[1] } : null,
+    yaSeco,
     abre: sumarDias(ultimaFecha, min),
     cierra: sumarDias(ultimaFecha, max),
-    pct: Math.max(0, Math.min(100, (transcurridos / max) * 100)),
+    pct: Math.max(0, Math.min(100, (transcurridos / Math.max(max, 1)) * 100)),
     fase: transcurridos < min ? 'antes' : transcurridos <= max ? 'ventana' : 'pasado',
   };
 }

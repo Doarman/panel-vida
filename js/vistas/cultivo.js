@@ -9,7 +9,7 @@
 
 import { leerEstado, leerArchivoDeSubsistema } from '../api.js';
 import { subsistema } from '../contract.js';
-import { registrar, sincronizar, pendientes, subidos, usarArchivo } from '../riegos.js';
+import { registrar, registrarSecado, sincronizar, pendientes, subidos, usarArchivo } from '../riegos.js';
 import { el, seccion, cargando, itemOmitible, pieOmitidos } from '../ui.js';
 import { conCache, antiguedad } from '../cache.js';
 import { estaOmitido, omitir, restaurarTodo } from '../omitidos.js';
@@ -299,8 +299,8 @@ function pintarMezcla(cultivo, fase, tipo, alCambiarTipo) {
  * puede decir en qué día vas y devolver la pregunta, que es todo lo que
  * legítimamente puede hacer (r8).
  */
-function pintarRiego(cultivo, ultimoRiego) {
-  const sec = estadoDeSecado(cultivo, ultimoRiego);
+function pintarRiego(cultivo, ultimoRiego, secados, faseId, alAnotar) {
+  const sec = estadoDeSecado(cultivo, ultimoRiego, { secados, faseId });
   const prox = (cultivo?.ciclo_activo?.riegos_programados || []).find((r) => r.fecha >= hoyISO());
 
   const s = seccion('Riego');
@@ -314,13 +314,18 @@ function pintarRiego(cultivo, ultimoRiego) {
     return s;
   }
 
-  const caja = el('div', `secado ${sec.fase}`);
+  const yaSeco = sec.yaSeco;
+  const caja = el('div', `secado ${yaSeco ? 'seco' : sec.fase}`);
+
+  const rango = `${sec.min} a ${sec.max}`;
 
   caja.append(
     el('p', 'secado-d',
-      sec.transcurridos === 0
-        ? `Regado hoy · secado de ${sec.min} a ${sec.max} días`
-        : `Día ${sec.transcurridos} de un secado de ${sec.min} a ${sec.max}`)
+      yaSeco
+        ? `Se secó a los ${yaSeco.dias} días`
+        : sec.transcurridos === 0
+          ? `Regado hoy · secado de ${rango} días`
+          : `Día ${sec.transcurridos} de un secado de ${rango}`)
   );
 
   const barra = el('div', 'barra');
@@ -329,23 +334,49 @@ function pintarRiego(cultivo, ultimoRiego) {
   caja.append(barra);
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
-      relleno.style.width = `${sec.pct.toFixed(1)}%`;
+      relleno.style.width = `${(yaSeco ? 100 : sec.pct).toFixed(1)}%`;
     })
   );
 
-  const leyenda =
-    sec.fase === 'antes'
+  const leyenda = yaSeco
+    ? `Seco ${cuando(yaSeco.fecha)}. Queda anotado: el próximo secado se proyecta con este dato.`
+    : sec.fase === 'antes'
       ? `La ventana se abre el ${fechaCorta(sec.abre)} y se cierra el ${fechaCorta(sec.cierra)}.`
       : sec.fase === 'ventana'
         ? `Dentro de la ventana proyectada, hasta el ${fechaCorta(sec.cierra)}.`
         : `Pasó la ventana proyectada, que se cerraba el ${fechaCorta(sec.cierra)}.`;
   caja.append(el('p', 'secado-l', leyenda));
 
-  caja.append(el('p', 'secado-p', '¿Cómo pesa la maceta?'));
+  if (!yaSeco) caja.append(el('p', 'secado-p', '¿Cómo pesa la maceta?'));
   s.append(caja);
 
-  const pie = [`Último registro: ${fecha(ultimoRiego)}`];
-  if (prox) pie.push(`el plan proyecta ${fechaCorta(prox.fecha)} · ${prox.tipo}`);
+  // El botón no marca una tarea cumplida: anota una observación que Nico hizo
+  // levantando la maceta. Es el único dato que puede corregir el ciclo de
+  // secado, que hoy es una estimación del archivo.
+  if (!yaSeco && ultimoRiego && sec.transcurridos > 0) {
+    const b = el('button', 'btn btn-sec', 'Ya se secó');
+    b.type = 'button';
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      b.textContent = 'Anotando…';
+      await alAnotar({
+        desde: ultimoRiego,
+        fecha: hoyISO(),
+        dias: sec.transcurridos,
+        fase: faseId,
+      });
+    });
+    s.append(b);
+  }
+
+  const pie = [`Último riego: ${fecha(ultimoRiego)}`];
+  if (sec.medido) {
+    const de = sec.mismaFase ? `en la fase ${faseId}` : 'en el ciclo';
+    pie.push(`secado medido ${de} sobre ${sec.n} ${sec.n === 1 ? 'observación' : 'observaciones'}`);
+    if (sec.plan) pie.push(`el archivo estima ${sec.plan.min} a ${sec.plan.max}`);
+  } else if (prox) {
+    pie.push(`el plan proyecta ${fechaCorta(prox.fecha)} · ${prox.tipo}`);
+  }
   s.append(el('p', 'pie', pie.join(' · ')));
 
   return s;
@@ -657,14 +688,16 @@ export async function render(main) {
   const subRegistro = subsistema(estado, 'cultivo')?.registro;
   usarArchivo(subRegistro?.archivo_entrada_app);
 
-  let yaSubidos = [];
+  let enDrive = { riegos: [], secados: [] };
   try {
     await sincronizar();
-    yaSubidos = await subidos();
+    enDrive = await subidos();
   } catch {
     /* sin red o sin sesión: se muestran solo los pendientes locales */
   }
-  const sinSubir = pendientes();
+  const sinSubir = pendientes('riegos');
+  const yaSubidos = enDrive.riegos;
+  const observaciones = [...enDrive.secados, ...pendientes('secados')];
 
   aviso.remove();
 
@@ -693,7 +726,10 @@ export async function render(main) {
       render(main);
     }),
     pintarAmbiente(fase),
-    pintarRiego(cultivo, ultimo),
+    pintarRiego(cultivo, ultimo, observaciones, fase?.id, async (obs) => {
+      await registrarSecado(obs);
+      render(main);
+    }),
     pintarProyeccion(cultivo, sub?.resumen, ultimo),
     pintarGrupos(cultivo),
     pintarPrevisto(fase),

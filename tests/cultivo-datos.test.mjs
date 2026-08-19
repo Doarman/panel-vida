@@ -18,7 +18,7 @@ import assert from 'node:assert/strict';
 import {
   dosisOrdenadas, ordenDeLaFase, totalMezcla, productosDeLaFase,
   faseDe, diaDeCiclo, aguaBase, nombreDe, leerNutricion, rango,
-  recetaDe, tiposDeRiego,
+  recetaDe, tiposDeRiego, estadoDeSecado, secadoObservado,
 } from '../js/cultivo-datos.js';
 
 const cultivo = {
@@ -299,4 +299,69 @@ test('un rango se muestra con guión, un valor suelto tal cual', () => {
   assert.equal(rango([0.8, 1.0]), '0.8–1');
   assert.equal(rango(null), '—');
   assert.equal(rango(500), 500);
+});
+
+// ---------- secado medido contra secado planificado ----------
+
+const SEC = (desde, fecha, dias, fase = 'V1') => ({ desde, fecha, dias, fase });
+
+test('sin observaciones, el secado sale del plan del archivo', () => {
+  const e = estadoDeSecado(cultivo, '2026-08-14', { hoy: '2026-08-16' });
+  assert.equal(e.medido, false);
+  assert.deepEqual([e.min, e.max], [4, 5]);
+  assert.equal(e.transcurridos, 2);
+});
+
+test('una observación reemplaza al plan y lo deja como referencia', () => {
+  const e = estadoDeSecado(cultivo, '2026-08-14', {
+    secados: [SEC('2026-08-10', '2026-08-13', 3)],
+    hoy: '2026-08-16',
+  });
+  assert.equal(e.medido, true);
+  assert.deepEqual([e.min, e.max], [3, 3]);
+  assert.deepEqual(e.plan, { min: 4, max: 5 }); // el archivo no se pisa
+  assert.equal(e.n, 1);
+});
+
+test('varias observaciones arman un rango', () => {
+  const e = estadoDeSecado(cultivo, '2026-08-20', {
+    secados: [
+      SEC('2026-08-02', '2026-08-05', 3),
+      SEC('2026-08-06', '2026-08-10', 4),
+      SEC('2026-08-11', '2026-08-14', 3),
+    ],
+    hoy: '2026-08-22',
+  });
+  assert.deepEqual([e.min, e.max], [3, 4]);
+  assert.equal(e.n, 3);
+});
+
+test('corregir una anotación no suma dos observaciones del mismo riego', () => {
+  // Append-only en el archivo, pero la última de cada riego es la que vale.
+  const e = estadoDeSecado(cultivo, '2026-08-20', {
+    secados: [SEC('2026-08-10', '2026-08-13', 3), SEC('2026-08-10', '2026-08-14', 4)],
+    hoy: '2026-08-21',
+  });
+  assert.equal(e.n, 1);
+  assert.deepEqual([e.min, e.max], [4, 4]);
+});
+
+test('se prefiere lo medido en la misma fase: en flor la planta toma mas', () => {
+  const secados = [SEC('2026-08-02', '2026-08-05', 3, 'V1'), SEC('2026-09-21', '2026-09-23', 2, 'S5')];
+  const enFlor = estadoDeSecado(cultivo, '2026-09-25', { secados, faseId: 'S5', hoy: '2026-09-26' });
+  assert.equal(enFlor.mismaFase, true);
+  assert.deepEqual([enFlor.min, enFlor.max], [2, 2]);
+});
+
+test('la observación de este riego se reconoce como ya seco', () => {
+  const e = estadoDeSecado(cultivo, '2026-08-14', {
+    secados: [SEC('2026-08-14', '2026-08-17', 3)],
+    hoy: '2026-08-18',
+  });
+  assert.equal(e.yaSeco.dias, 3);
+});
+
+test('secadoObservado sin datos no inventa un rango', () => {
+  assert.equal(secadoObservado([]), null);
+  assert.equal(secadoObservado([{ desde: null, dias: 3 }]), null);
 });

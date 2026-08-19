@@ -931,3 +931,8 @@ body[data-seccion] .btn-sec { color: var(--pv-tinta2); }
   line-height: 1.5;
   word-break: break-word;
 }
+
+/* Sustrato ya seco: el contador dejó de proyectar y pasó a informar un hecho. */
+.secado.seco .barra i { background: var(--pv-brote); opacity: 1; }
+.secado.seco .secado-d { color: var(--pv-brote); }
+.secado + .btn { margin-top: 12px; }
