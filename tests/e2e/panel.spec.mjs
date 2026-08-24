@@ -261,9 +261,20 @@ test('anotar que se secó queda registrado y corrige la proyección', async ({ p
   await expect(boton).toBeVisible();
   await boton.click();
 
+  // El ancla queda a la vista antes de guardar: si el riego no es el que
+  // corresponde, el numero sale mal y hay que poder verlo.
+  await expect(page.locator('.anotar-l')).toContainText('Contando desde el riego del');
+
+  // Los dias se editan: el sustrato pudo secar antes de lo que cuenta el ancla.
+  await page.locator('.anotar-n').fill('3');
+  await page.getByRole('button', { name: 'Anotar', exact: true }).click();
+
   // Queda anotado como hecho, no como tarea cumplida.
   await expect(caja).toContainText('Se secó a los 3 días', { timeout: 5000 });
-  await expect(page.locator('.secado + .btn')).toHaveCount(0);
+
+  // Ya anotado, se puede corregir: append-only en el archivo, pero el numero
+  // en pantalla tiene que poder arreglarse si salio mal.
+  await expect(page.getByRole('button', { name: 'Corregir el secado' })).toBeVisible();
 
   // Y la proyección pasa a apoyarse en lo medido, sin perder el dato del plan.
   const pie = page.locator('.secado').locator('xpath=following-sibling::p[1]');

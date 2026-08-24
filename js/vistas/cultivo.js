@@ -17,7 +17,7 @@ import {
   hoyISO, dias, fecha, cuando, rango,
   faseDe, diaDeCiclo, nombreDe, infoProducto,
   dosisOrdenadas, totalMezcla, productosDeLaFase,
-  ordenDeLaFase, aguaBase, estadoDeSecado, fechaCorta,
+  ordenDeLaFase, aguaBase, estadoDeSecado, fechaCorta, sumarDias,
   recetaDe, tiposDeRiego, tipoSugerido, secadosConsolidados,
 } from '../cultivo-datos.js';
 
@@ -293,6 +293,58 @@ function pintarMezcla(cultivo, fase, tipo, aviso, alCambiarTipo) {
  * puede decir en qué día vas y devolver la pregunta, que es todo lo que
  * legítimamente puede hacer (r8).
  */
+/** El control para anotar un secado, con los días editables y el ancla visible. */
+function pintarAnotarSecado(ultimoRiego, sec, yaSeco, faseId, alAnotar) {
+  const cont = el('div');
+
+  const abrir = el('button', 'btn btn-sec', yaSeco ? 'Corregir el secado' : 'Ya se secó');
+  abrir.type = 'button';
+
+  const editor = el('div', 'anotar oculto');
+  editor.append(el('p', 'anotar-t', 'Se secó a los'));
+
+  const fila = el('div', 'anotar-f');
+  const dias = el('input', 'anotar-n');
+  dias.type = 'number';
+  dias.min = '1';
+  dias.step = 'any';
+  dias.inputMode = 'numeric';
+  dias.value = String(yaSeco ? yaSeco.dias : Math.max(1, sec.transcurridos));
+  dias.setAttribute('aria-label', 'Días que tardó en secar');
+  fila.append(dias, el('span', 'anotar-u', 'días'));
+  editor.append(fila);
+
+  // El ancla, a la vista: si el riego que figura no es el que corresponde, el
+  // número va a salir mal y conviene que se vea antes de guardarlo.
+  editor.append(
+    el('p', 'anotar-l', `Contando desde el riego del ${fecha(ultimoRiego)}. Si ese no es el riego que corresponde, registralo primero y volvé.`)
+  );
+
+  const guardar = el('button', 'btn', 'Anotar');
+  guardar.type = 'button';
+  guardar.addEventListener('click', async () => {
+    const n = Number(dias.value);
+    if (!(n > 0)) return;
+    guardar.disabled = true;
+    guardar.textContent = 'Anotando…';
+    await alAnotar({
+      desde: ultimoRiego,
+      fecha: sumarDias(ultimoRiego, n),
+      dias: n,
+      fase: faseId,
+    });
+  });
+  editor.append(guardar);
+
+  abrir.addEventListener('click', () => {
+    editor.classList.toggle('oculto');
+    if (!editor.classList.contains('oculto')) dias.focus();
+  });
+
+  cont.append(abrir, editor);
+  return cont;
+}
+
 function pintarRiego(cultivo, ultimoRiego, secados, faseId, alAnotar) {
   const sec = estadoDeSecado(cultivo, ultimoRiego, { secados, faseId });
   const prox = (cultivo?.ciclo_activo?.riegos_programados || []).find((r) => r.fecha >= hoyISO());
@@ -344,23 +396,16 @@ function pintarRiego(cultivo, ultimoRiego, secados, faseId, alAnotar) {
   if (!yaSeco) caja.append(el('p', 'secado-p', '¿Cómo pesa la maceta?'));
   s.append(caja);
 
-  // El botón no marca una tarea cumplida: anota una observación que Nico hizo
-  // levantando la maceta. Es el único dato que puede corregir el ciclo de
-  // secado, que hoy es una estimación del archivo.
-  if (!yaSeco && ultimoRiego && sec.transcurridos > 0) {
-    const b = el('button', 'btn btn-sec', 'Ya se secó');
-    b.type = 'button';
-    b.addEventListener('click', async () => {
-      b.disabled = true;
-      b.textContent = 'Anotando…';
-      await alAnotar({
-        desde: ultimoRiego,
-        fecha: hoyISO(),
-        dias: sec.transcurridos,
-        fase: faseId,
-      });
-    });
-    s.append(b);
+  // Anotar el secado no marca una tarea cumplida: guarda algo que Nico observó
+  // levantando la maceta, y es el único dato que puede corregir el ciclo de
+  // secado que el archivo trae estimado.
+  //
+  // Los días se editan y el riego contra el que se cuenta queda a la vista. Sin
+  // eso, un riego que no se llegó a registrar hace que la observación se ancle
+  // al anterior y guarde un número que nadie puede detectar después. Paso de
+  // verdad: quedó anotado un secado de 5 días que en realidad fueron 3.
+  if (ultimoRiego) {
+    s.append(pintarAnotarSecado(ultimoRiego, sec, yaSeco, faseId, alAnotar));
   }
 
   const pie = [`Último riego: ${fecha(ultimoRiego)}`];
