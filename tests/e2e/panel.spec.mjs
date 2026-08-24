@@ -14,6 +14,8 @@
 import { test, expect } from '@playwright/test';
 import { ESTADO, CULTIVO, EVENTOS, CORREO_IDS, mensaje } from './fixtures.mjs';
 
+const sinGrupo2 = { ...CULTIVO, grupos: [CULTIVO.grupos[0]] };
+
 const json = (datos) => ({
   status: 200,
   contentType: 'application/json',
@@ -280,4 +282,21 @@ test('anotar que se secó queda registrado y corrige la proyección', async ({ p
   const pie = page.locator('.secado').locator('xpath=following-sibling::p[1]');
   await expect(pie).toContainText('secado medido');
   await expect(pie).toContainText('el archivo estima 4 a 5');
+});
+
+test('con un solo grupo la pantalla no se rompe ni muestra la seccion Grupos', async ({ page }) => {
+  // El grupo 2 salio del archivo para modelarse aparte. Que desaparezca una
+  // seccion no puede dejar huecos ni romper lo que depende del grupo.
+  await prepararGoogle(page);
+  await page.route('https://www.googleapis.com/drive/v3/files/FIXTURE-CULTIVO*', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sinGrupo2) })
+  );
+  await page.goto('/#/cultivo');
+  await page.waitForFunction(() => !document.querySelector('.cargando'));
+  await page.waitForTimeout(250);
+
+  await expect(page.locator('.titulo', { hasText: 'Grupos' })).toHaveCount(0);
+  await expect(page.locator('.litros-ref')).toContainText('8 macetas');
+  await sinDesborde(page);
+  await navNoTapa(page);
 });

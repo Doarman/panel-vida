@@ -427,3 +427,29 @@ test('las mediciones consolidadas por Cowork se siguen encontrando', () => {
   assert.equal(secadosConsolidados({ secados_medidos: [{ dias: 4 }] }).length, 1);
   assert.deepEqual(secadosConsolidados({}), []);
 });
+
+// ---------- un solo grupo ----------
+// El grupo 2 sale del archivo y se modela aparte mas adelante. Todo lo que
+// depende del grupo tiene que seguir en pie con uno solo.
+
+const soloUno = {
+  ...cultivo,
+  grupos: [cultivo.grupos[0]],
+};
+
+test('con un solo grupo, el grupo activo se sigue resolviendo', () => {
+  assert.equal(totalMezcla(soloUno, fase('V1')).n, 8);
+});
+
+test('con un solo grupo, el secado sigue proyectando', () => {
+  const e = estadoDeSecado(soloUno, '2026-08-14', { hoy: '2026-08-16' });
+  assert.deepEqual([e.min, e.max], [4, 5]);
+});
+
+test('sin grupos declarados no se inventa una tanda', () => {
+  assert.equal(totalMezcla({ ...cultivo, grupos: [] }, fase('V1')), null);
+});
+
+test('sin grupos y sin observaciones, el secado no proyecta nada', () => {
+  assert.equal(estadoDeSecado({ ...cultivo, grupos: [] }, '2026-08-14', { hoy: '2026-08-16' }), null);
+});
