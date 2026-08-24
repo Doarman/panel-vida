@@ -173,6 +173,9 @@ test('el riego intermedio no muestra las dosis del completo (r13)', async ({ pag
   expect(await dosis(), 'el intermedio no lleva sales').toEqual(['Pure Zym', 'Vitamax']);
 
   await page.getByRole('button', { name: 'completo', exact: true }).click();
+  // El redibujado es asincrono: sin esperar a que la pestaña quede marcada, se
+  // leen las dosis de antes del cambio y el resultado depende de la maquina.
+  await expect(page.locator('.seg-b.activo')).toHaveText('completo');
   const tras = await dosis();
 
   expect(tras, 'el completo sí las lleva').toContain('Rhino Skin');
