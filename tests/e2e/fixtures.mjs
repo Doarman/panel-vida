@@ -157,7 +157,10 @@ export const CULTIVO = {
         ec_objetivo: [1.7, 2.0], ph_entrada: [6.2, 6.4], volumen_por_maceta_l: [4, 4],
         ppfd: 1150, ppfd_techo: 1200,
         ambiente: { temp_luz_c: [22, 24], temp_oscuridad_c: [17, 20], hr_pct: [42, 48], diferencial_c: [6, 8] },
-        acciones: ['Hybrids llega a 1 g/L: techo absoluto, SOLO esta semana'],
+        // Contradiccion deliberada: la fase dice 1150 y la accion 1200. Es la
+        // regresion real que volvio en la v1.7.0, puesta aca para que la
+        // seccion de auditoria tenga algo que mostrar.
+        acciones: ['Hybrids llega a 1 g/L: techo absoluto, SOLO esta semana', 'Subir a 1200 PPFD solo si el sustrato seca en 24-36h'],
         nutricion_intermedio: { ...NUTRICION_INTERMEDIO, trico_mas_g_l: 0.5 },
         nutricion_intermedio_nota: NOTA_INTERMEDIO,
         ec_objetivo_intermedio: null, ph_entrada_intermedio: [6.2, 6.4],

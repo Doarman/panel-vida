@@ -7,7 +7,7 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "node --test tests/cultivo-datos.test.mjs",
+    "test": "node --test tests/*.test.mjs",
     "e2e": "playwright test",
     "qa": "node tools/qa.mjs",
     "dev": "node tools/serve.mjs"

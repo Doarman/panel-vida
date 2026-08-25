@@ -15,7 +15,7 @@
 //  3. El caché se llena solo con lo que ya funcionó (respuestas 200), así una
 //     falla de red nunca envenena lo que quedó guardado.
 
-const VERSION = 'pv-v22';
+const VERSION = 'pv-v23';
 const SHELL = [
   './',
   './index.html',
@@ -29,6 +29,7 @@ const SHELL = [
   './js/riegos.js',
   './js/ui.js',
   './js/cache.js',
+  './js/auditoria.js',
   './js/omitidos.js',
   './js/cultivo-datos.js',
   './js/vistas/plan.js',

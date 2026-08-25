@@ -10,9 +10,10 @@
 import { leerEstado, leerArchivoDeSubsistema } from '../api.js';
 import { subsistema } from '../contract.js';
 import { registrar, registrarSecado, sincronizar, pendientes, subidos, usarArchivo } from '../riegos.js';
-import { el, seccion, cargando, itemOmitible, pieOmitidos } from '../ui.js';
+import { el, seccion, cargando, error, itemOmitible, pieOmitidos } from '../ui.js';
 import { conCache, antiguedad } from '../cache.js';
 import { estaOmitido, omitir, restaurarTodo } from '../omitidos.js';
+import { auditarCultivo, hallazgosDeclarados } from '../auditoria.js';
 import {
   hoyISO, dias, fecha, cuando, rango,
   faseDe, diaDeCiclo, nombreDe, infoProducto,
@@ -664,6 +665,53 @@ function pintarFormulario(cultivo, fase, alRegistrar) {
   return s;
 }
 
+/**
+ * Contradicciones del archivo consigo mismo.
+ *
+ * Va en la app y no solo en la herramienta de escritorio porque el archivo se
+ * regenera desde bases anteriores y las correcciones se pierden. Ya pasó: tres
+ * correcciones volvieron atrás y se detectaron recién en el repaso del lunes.
+ * Acá aparecen el mismo día, en el teléfono.
+ *
+ * No es una lista de tareas: es el archivo diciendo dos cosas distintas.
+ */
+function pintarAuditoria(cultivo, estado, refrescar) {
+  const items = [...hallazgosDeclarados(estado), ...auditarCultivo(cultivo, hoyISO())];
+  if (!items.length) return null;
+
+  const visibles = items.filter((i) => !estaOmitido(`auditoria:${i.clave}`));
+
+  const s = seccion('El archivo se contradice');
+  const ul = el('ul', 'mirada');
+
+  const pie = pieOmitidos(
+    () => items.filter((i) => estaOmitido(`auditoria:${i.clave}`)).length,
+    () => {
+      restaurarTodo();
+      refrescar();
+    }
+  );
+
+  const vacio = el('p', 'vacio oculto', 'Nada a la vista por hoy.');
+
+  for (const i of visibles) {
+    ul.append(
+      itemOmitible([el('span', 'mirada-t', i.texto)], (contenedor) => {
+        omitir(`auditoria:${i.clave}`);
+        pie.actualizar();
+        vacio.classList.toggle('oculto', Boolean(contenedor?.children.length));
+      })
+    );
+  }
+
+  if (!visibles.length) vacio.classList.remove('oculto');
+  s.append(ul, vacio, pie.nodo);
+  s.append(
+    el('p', 'pie', 'Son incoherencias internas del archivo, no del cultivo. Se resuelven en la conversación de cultivo y las escribe Cowork.')
+  );
+  return s;
+}
+
 function pintarRegistros(lista, sinSubir) {
   if (!lista.length && !sinSubir.length) return null;
   const s = seccion('Últimos registros');
@@ -772,25 +820,40 @@ export async function render(main) {
   const irAlPlan = el('a', 'boton-enlace', 'Ver el plan completo del ciclo →');
   irAlPlan.href = '#/plan';
 
-  const partes = [
-    pintarCiclo(ciclo, fase, diaDeCiclo(cultivo), marca),
-    pintarMezcla(cultivo, fase, tipo, sugerencia.aviso, (t) => {
+  // Cada sección se arma por separado y aislada.
+  //
+  // Antes se construían todas dentro de un array literal: si una sola tiraba un
+  // error, la expresión entera moría y la pantalla quedaba en blanco. Pasó de
+  // verdad, y el síntoma —Cultivo vacío— no decía nada sobre la causa. Ahora,
+  // si una sección falla, se dibuja el error en su lugar y el resto sigue.
+  const secciones = [
+    ['ciclo', () => pintarCiclo(ciclo, fase, diaDeCiclo(cultivo), marca)],
+    ['mezcla', () => pintarMezcla(cultivo, fase, tipo, sugerencia.aviso, (t) => {
       eleccion = { tipo: t, para: contexto };
       render(main);
-    }),
-    pintarAmbiente(fase),
-    pintarRiego(cultivo, ultimo, observaciones, fase?.id, async (obs) => {
+    })],
+    ['ambiente', () => pintarAmbiente(fase)],
+    ['riego', () => pintarRiego(cultivo, ultimo, observaciones, fase?.id, async (obs) => {
       await registrarSecado(obs);
       render(main);
-    }),
-    pintarProyeccion(cultivo, sub?.resumen, ultimo),
-    pintarGrupos(cultivo),
-    pintarPrevisto(fase),
-    pintarAbiertos(cultivo, () => render(main)),
-    pintarFormulario(cultivo, fase, () => render(main)),
-    pintarRegistros(yaSubidos, sinSubir),
-    irAlPlan,
+    })],
+    ['proyección', () => pintarProyeccion(cultivo, sub?.resumen, ultimo)],
+    ['grupos', () => pintarGrupos(cultivo)],
+    ['lo previsto', () => pintarPrevisto(fase)],
+    ['requiere tu mirada', () => pintarAbiertos(cultivo, () => render(main))],
+    ['registro', () => pintarFormulario(cultivo, fase, () => render(main))],
+    ['últimos registros', () => pintarRegistros(yaSubidos, sinSubir)],
+    ['auditoría', () => pintarAuditoria(cultivo, estado, () => render(main))],
   ];
 
-  for (const p of partes) if (p) main.append(p);
+  for (const [nombre, armar] of secciones) {
+    try {
+      const nodo = armar();
+      if (nodo) main.append(nodo);
+    } catch (e) {
+      main.append(error(nombre, e));
+    }
+  }
+
+  main.append(irAlPlan);
 }

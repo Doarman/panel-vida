@@ -150,7 +150,11 @@ test('el toque mínimo es de 44 px en todo lo que se pueda tocar', async ({ page
     for (const el of document.querySelectorAll('button, a, input, select, summary')) {
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
-      if (r.height < 44) malos.push(`${el.tagName.toLowerCase()}.${el.className || '?'} → ${Math.round(r.height)}px`);
+      // Se redondea antes de comparar: el layout devuelve 43.99 para un
+      // elemento de 44 y la prueba fallaba de a ratos por esa diferencia, que
+      // no existe para el dedo.
+      const alto = Math.round(r.height);
+      if (alto < 44) malos.push(`${el.tagName.toLowerCase()}.${el.className || '?'} → ${alto}px`);
     }
     return malos;
   });
@@ -302,4 +306,23 @@ test('con un solo grupo la pantalla no se rompe ni muestra la seccion Grupos', a
   await expect(page.locator('.litros-ref')).toContainText('8 macetas');
   await sinDesborde(page);
   await navNoTapa(page);
+});
+
+test('las contradicciones del archivo se ven en el telefono', async ({ page }) => {
+  // El archivo se regenera desde bases anteriores y las correcciones vuelven
+  // atras. Que aparezcan el mismo dia, y no recien en el repaso del lunes.
+  await ir(page, 'cultivo');
+
+  const seccion = page.locator('.titulo', { hasText: 'El archivo se contradice' });
+  await expect(seccion).toHaveCount(1);
+  await expect(page.locator('.mirada-t', { hasText: 'PPFD' })).toBeVisible();
+
+  // Se puede ocultar como cualquier aviso: es informacion, no una tarea.
+  const antes = await page.locator('.mirada li').count();
+  await page.evaluate(() => {
+    const t = [...document.querySelectorAll('.mirada-t')].find((x) => /PPFD/.test(x.textContent));
+    t.closest('li').querySelector('.ocultar').click();
+  });
+  await page.waitForTimeout(320);
+  expect(await page.locator('.mirada li').count()).toBe(antes - 1);
 });
