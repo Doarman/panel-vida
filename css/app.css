@@ -613,25 +613,38 @@ body[data-seccion="rumbo"] { --w-seccion: var(--pv-w-rum); }
 .sin-dosis-t { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.011em; }
 .sin-dosis-p { margin: 6px 0 0; font-size: 13px; color: var(--pv-tinta2); }
 
-/* ---------- secado ---------- */
-/* El corazón del principio. No convertirlo en recordatorio ni en alerta. */
+/* ---------- estado del sustrato ---------- */
+/* La unica pregunta que se hace todos los dias, y por eso la unica que ocupa
+   una tarjeta entera. Es el corazon del principio: informa, no reclama. */
 
-.secado { padding: 18px; border-radius: var(--pv-r); background: var(--pv-sup); box-shadow: var(--pv-sombra); }
+.estado { padding: 22px 20px 20px; text-align: center; }
 
-.secado-d { margin: 0; font-size: 38px; font-weight: 600; letter-spacing: -0.021em; line-height: 1; }
-
-.secado .barra {
-  height: 12px;
-  margin-top: 20px;
-  background: linear-gradient(90deg, var(--pv-brote-s), var(--pv-sol-s));
+.estado-k {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pv-tinta3);
 }
 
-.secado .barra i { background: var(--pv-brote); opacity: 0.85; }
-.secado.pasado .barra i { background: var(--pv-alerta); }
+.estado-n {
+  margin: 8px 0 0;
+  font-size: 52px;
+  font-weight: 600;
+  letter-spacing: -0.026em;
+  line-height: 1;
+  color: var(--ac-d);
+}
 
-.secado-l { margin: 12px 0 0; font-size: 13px; color: var(--pv-tinta2); line-height: 1.5; }
+.estado-n.urge { color: var(--pv-alerta); }
 
-.secado-p {
+.estado .barra { height: 8px; margin-top: 18px; background: var(--ac-s); }
+.estado-n.urge ~ .barra i { background: var(--pv-alerta); }
+
+.estado-s { margin: 12px 0 0; font-size: 13px; color: var(--pv-tinta3); font-variant-numeric: tabular-nums; }
+
+.estado-p {
   margin: 14px 0 0;
   padding-top: 14px;
   border-top: 1px solid var(--pv-linea);
@@ -639,6 +652,46 @@ body[data-seccion="rumbo"] { --w-seccion: var(--pv-w-rum); }
   font-weight: 600;
   letter-spacing: -0.005em;
 }
+
+/* Las dos acciones del dia, del mismo tamaño y al alcance del pulgar. */
+.acciones-p { display: flex; gap: 10px; margin-bottom: 20px; }
+.acciones-p .btn { margin-top: 0; }
+
+/* Contexto de fase: una linea, no una tarjeta. */
+.contexto {
+  margin: 0 4px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pv-tinta3);
+}
+
+/* Lo que no se mira todos los dias se abre solo si hace falta. */
+.plegable { margin-bottom: 12px; }
+
+.plegable > summary {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: var(--pv-r);
+  background: var(--pv-sup);
+  box-shadow: var(--pv-sombra);
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--pv-tinta2);
+  cursor: pointer;
+  list-style: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.plegable > summary::-webkit-details-marker { display: none; }
+.plegable > summary::after { content: "▾"; margin-left: auto; color: var(--pv-tinta3); }
+.plegable[open] > summary { border-radius: var(--pv-r) var(--pv-r) 0 0; }
+.plegable[open] > summary::after { content: "▴"; }
+.plegable[open] > summary + * { border-radius: 0 0 var(--pv-r) var(--pv-r); margin-top: 0; }
+.plegable .bloque { margin-bottom: 0; }
 
 /* ---------- proyección y listas ---------- */
 

@@ -256,11 +256,26 @@ export function grupoActivo(cultivo) {
  * floración toma mucho más que en vegetativo y mezclarlas daría un promedio que
  * no describe ninguna de las dos.
  */
+/**
+ * Cuánto tarda en secar, EN HORAS.
+ *
+ * El archivo lo traía en días enteros, y ahí estaba el problema real: el
+ * sustrato de este cultivo seca en unas 60 horas, que son dos días y medio.
+ * En un contador de días enteros eso no se puede decir, así que el número
+ * nunca coincidía con la maceta y el contador dejó de servir.
+ *
+ * Orden de precedencia, del dato más propio al más prestado:
+ *   1. lo que Nico midió, en esta fase
+ *   2. lo que declara el archivo en horas
+ *   3. el puente de config, mientras el archivo no lo declare
+ *   4. el rango en días del archivo, convertido
+ */
 export function secadoObservado(secados = [], faseId = null) {
   const porRiego = new Map();
   for (const s of secados) {
-    if (!s?.desde || typeof s.dias !== 'number') continue;
-    porRiego.set(s.desde, s); // el último de cada riego gana
+    const horas = s?.horas ?? (typeof s?.dias === 'number' ? s.dias * 24 : null);
+    if (!s?.desde || horas == null) continue;
+    porRiego.set(s.desde, { ...s, horas }); // el último de cada riego gana
   }
 
   const todos = [...porRiego.values()].sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
@@ -269,52 +284,61 @@ export function secadoObservado(secados = [], faseId = null) {
   const deLaFase = faseId ? todos.filter((s) => s.fase === faseId) : [];
   const usados = deLaFase.length ? deLaFase : todos;
   const recientes = usados.slice(-4);
-  const valores = recientes.map((s) => s.dias);
+  const valores = recientes.map((s) => s.horas);
 
   return {
-    min: Math.min(...valores),
-    max: Math.max(...valores),
+    horas: Math.round(valores.reduce((a, b) => a + b, 0) / valores.length),
     n: recientes.length,
     mismaFase: deLaFase.length > 0,
     ultimo: todos.at(-1),
   };
 }
 
-/**
- * Dónde está parado el secado.
- *
- * Si hay observaciones, el rango sale de ellas y el del archivo queda como
- * referencia. El plan proyecta; la maceta corrige.
- */
-export function estadoDeSecado(cultivo, ultimaFecha, { secados = [], faseId = null, hoy = hoyISO() } = {}) {
-  const plan = grupoActivo(cultivo)?.ciclo_secado_dias;
+/** Las horas de secado vigentes, y de dónde salieron. */
+export function horasDeSecado(cultivo, { secados = [], faseId = null, puente = null } = {}) {
   const medido = secadoObservado(secados, faseId);
+  if (medido) return { horas: medido.horas, origen: 'medido', n: medido.n, mismaFase: medido.mismaFase };
 
-  const planOk = Array.isArray(plan) && plan.length === 2;
-  if (!ultimaFecha || (!planOk && !medido)) return null;
+  const g = grupoActivo(cultivo);
+  if (typeof g?.ciclo_secado_horas === 'number') {
+    return { horas: g.ciclo_secado_horas, origen: 'archivo', n: 0 };
+  }
+  if (typeof puente === 'number' && puente > 0) {
+    return { horas: puente, origen: 'puente', n: 0 };
+  }
 
-  const min = medido ? medido.min : plan[0];
-  const max = medido ? medido.max : plan[1];
+  const d = g?.ciclo_secado_dias;
+  if (Array.isArray(d) && d.length === 2) {
+    return { horas: Math.round(((d[0] + d[1]) / 2) * 24), origen: 'dias', n: 0, dias: d };
+  }
+  return null;
+}
 
-  const transcurridos = dias(ultimaFecha, hoy);
-  if (transcurridos == null || transcurridos < 0) return null;
+/**
+ * Dónde está parado el secado, contado en horas.
+ *
+ * `ultimoRiego` puede traer hora; si es solo una fecha se asume el mediodía,
+ * que reparte el error en doce horas para cada lado en vez de acumularlo.
+ */
+export function estadoDeSecado(cultivo, ultimoRiego, opciones = {}) {
+  const { secados = [], faseId = null, puente = null, ahora = Date.now() } = opciones;
+  const base = horasDeSecado(cultivo, { secados, faseId, puente });
+  if (!ultimoRiego || !base) return null;
 
-  // La observación de ESTE secado, si ya la anotó.
-  const yaSeco = secados.find((s) => s?.desde === ultimaFecha) || null;
+  const desde = Date.parse(ultimoRiego.includes('T') ? ultimoRiego : `${ultimoRiego}T12:00:00`);
+  if (Number.isNaN(desde)) return null;
+
+  const transcurridas = Math.max(0, Math.round((ahora - desde) / 3600000));
+  const restantes = base.horas - transcurridas;
 
   return {
-    transcurridos,
-    min,
-    max,
-    medido: Boolean(medido),
-    n: medido?.n ?? 0,
-    mismaFase: medido?.mismaFase ?? false,
-    plan: planOk ? { min: plan[0], max: plan[1] } : null,
-    yaSeco,
-    abre: sumarDias(ultimaFecha, min),
-    cierra: sumarDias(ultimaFecha, max),
-    pct: Math.max(0, Math.min(100, (transcurridos / Math.max(max, 1)) * 100)),
-    fase: transcurridos < min ? 'antes' : transcurridos <= max ? 'ventana' : 'pasado',
+    ...base,
+    transcurridas,
+    restantes,
+    seco: restantes <= 0,
+    pct: Math.max(0, Math.min(100, (transcurridas / base.horas) * 100)),
+    // La observación de ESTE secado, si ya la anotó.
+    yaSeco: secados.find((s) => s?.desde === ultimoRiego) || null,
   };
 }
 

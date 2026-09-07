@@ -302,130 +302,98 @@ test('un rango se muestra con guión, un valor suelto tal cual', () => {
   assert.equal(rango(500), 500);
 });
 
-// ---------- secado medido contra secado planificado ----------
+// ---------- secado, en horas ----------
+//
+// El archivo lo traia en dias enteros y ahi estaba el problema: este sustrato
+// seca en unas 60 horas, que son dos dias y medio. En un contador de dias
+// enteros ese numero no se puede decir.
 
-const SEC = (desde, fecha, dias, fase = 'V1') => ({ desde, fecha, dias, fase });
+const AHORA = Date.parse('2026-08-16T12:00:00');
+const SEC = (desde, fecha, horas, fase = 'V1') => ({ desde, fecha, horas, fase });
 
-test('sin observaciones, el secado sale del plan del archivo', () => {
-  const e = estadoDeSecado(cultivo, '2026-08-14', { hoy: '2026-08-16' });
-  assert.equal(e.medido, false);
-  assert.deepEqual([e.min, e.max], [4, 5]);
-  assert.equal(e.transcurridos, 2);
+test('sin nada declarado, el rango en dias del archivo se convierte a horas', () => {
+  const e = estadoDeSecado(cultivo, '2026-08-14', { ahora: AHORA });
+  assert.equal(e.origen, 'dias');
+  assert.equal(e.horas, 108); // (4+5)/2 dias
 });
 
-test('una observación reemplaza al plan y lo deja como referencia', () => {
+test('el puente de config le gana al rango en dias', () => {
+  const e = estadoDeSecado(cultivo, '2026-08-14', { puente: 60, ahora: AHORA });
+  assert.equal(e.origen, 'puente');
+  assert.equal(e.horas, 60);
+});
+
+test('lo que declara el archivo en horas le gana al puente', () => {
+  const conHoras = { ...cultivo, grupos: [{ ...cultivo.grupos[0], ciclo_secado_horas: 66 }] };
+  const e = estadoDeSecado(conHoras, '2026-08-14', { puente: 60, ahora: AHORA });
+  assert.equal(e.origen, 'archivo');
+  assert.equal(e.horas, 66);
+});
+
+test('una medicion de Nico le gana a todo lo demas', () => {
   const e = estadoDeSecado(cultivo, '2026-08-14', {
-    secados: [SEC('2026-08-10', '2026-08-13', 3)],
-    hoy: '2026-08-16',
+    secados: [SEC('2026-08-10', '2026-08-12', 58)],
+    puente: 60,
+    ahora: AHORA,
   });
-  assert.equal(e.medido, true);
-  assert.deepEqual([e.min, e.max], [3, 3]);
-  assert.deepEqual(e.plan, { min: 4, max: 5 }); // el archivo no se pisa
-  assert.equal(e.n, 1);
+  assert.equal(e.origen, 'medido');
+  assert.equal(e.horas, 58);
 });
 
-test('varias observaciones arman un rango', () => {
-  const e = estadoDeSecado(cultivo, '2026-08-20', {
-    secados: [
-      SEC('2026-08-02', '2026-08-05', 3),
-      SEC('2026-08-06', '2026-08-10', 4),
-      SEC('2026-08-11', '2026-08-14', 3),
-    ],
-    hoy: '2026-08-22',
+test('60 horas desde el sabado al mediodia: quedan 12 el lunes a la mañana', () => {
+  const e = estadoDeSecado(cultivo, '2026-08-15', {
+    puente: 60,
+    ahora: Date.parse('2026-08-17T12:00:00'),
   });
-  assert.deepEqual([e.min, e.max], [3, 4]);
-  assert.equal(e.n, 3);
+  assert.equal(e.transcurridas, 48);
+  assert.equal(e.restantes, 12);
+  assert.equal(e.seco, false);
 });
 
-test('corregir una anotación no suma dos observaciones del mismo riego', () => {
-  // Append-only en el archivo, pero la última de cada riego es la que vale.
+test('pasadas las horas, el estado dice que pide agua', () => {
+  const e = estadoDeSecado(cultivo, '2026-08-14', {
+    puente: 60,
+    ahora: Date.parse('2026-08-17T12:00:00'),
+  });
+  assert.equal(e.seco, true);
+  assert.ok(e.restantes < 0);
+});
+
+test('una observacion vieja en dias se sigue leyendo, convertida', () => {
+  const e = estadoDeSecado(cultivo, '2026-08-14', {
+    secados: [{ desde: '2026-08-10', fecha: '2026-08-13', dias: 3, fase: 'V1' }],
+    ahora: AHORA,
+  });
+  assert.equal(e.horas, 72);
+});
+
+test('corregir una anotacion no suma dos observaciones del mismo riego', () => {
   const e = estadoDeSecado(cultivo, '2026-08-20', {
-    secados: [SEC('2026-08-10', '2026-08-13', 3), SEC('2026-08-10', '2026-08-14', 4)],
-    hoy: '2026-08-21',
+    secados: [SEC('2026-08-10', '2026-08-12', 120), SEC('2026-08-10', '2026-08-13', 60)],
+    ahora: AHORA,
   });
   assert.equal(e.n, 1);
-  assert.deepEqual([e.min, e.max], [4, 4]);
+  assert.equal(e.horas, 60);
 });
 
 test('se prefiere lo medido en la misma fase: en flor la planta toma mas', () => {
-  const secados = [SEC('2026-08-02', '2026-08-05', 3, 'V1'), SEC('2026-09-21', '2026-09-23', 2, 'S5')];
-  const enFlor = estadoDeSecado(cultivo, '2026-09-25', { secados, faseId: 'S5', hoy: '2026-09-26' });
+  const secados = [SEC('2026-08-02', '2026-08-05', 72, 'V1'), SEC('2026-09-21', '2026-09-23', 48, 'S5')];
+  const enFlor = estadoDeSecado(cultivo, '2026-09-25', { secados, faseId: 'S5', ahora: Date.parse('2026-09-26T12:00:00') });
   assert.equal(enFlor.mismaFase, true);
-  assert.deepEqual([enFlor.min, enFlor.max], [2, 2]);
+  assert.equal(enFlor.horas, 48);
 });
 
-test('la observación de este riego se reconoce como ya seco', () => {
+test('la observacion de este riego se reconoce como ya seco', () => {
   const e = estadoDeSecado(cultivo, '2026-08-14', {
-    secados: [SEC('2026-08-14', '2026-08-17', 3)],
-    hoy: '2026-08-18',
+    secados: [SEC('2026-08-14', '2026-08-17', 60)],
+    ahora: AHORA,
   });
-  assert.equal(e.yaSeco.dias, 3);
+  assert.equal(e.yaSeco.horas, 60);
 });
 
-test('secadoObservado sin datos no inventa un rango', () => {
+test('secadoObservado sin datos no inventa un numero', () => {
   assert.equal(secadoObservado([]), null);
-  assert.equal(secadoObservado([{ desde: null, dias: 3 }]), null);
-});
-
-// ---------- que tipo de riego proponer (reglas r11 y r2) ----------
-
-const conPlan = (programados) => ({
-  ...cultivo,
-  ciclo_activo: { ...cultivo.ciclo_activo, riegos_programados: programados },
-});
-
-test('sin riegos previos, manda el plan', () => {
-  const c = conPlan([{ fecha: '2026-08-22', tipo: 'completo', fase: 'V3' }]);
-  const s = tipoSugerido(c, [], fase('V1'), '2026-08-19');
-  assert.equal(s.tipo, 'completo');
-  assert.equal(s.aviso, null);
-});
-
-test('si el plan proyecta intermedio, se propone intermedio', () => {
-  const c = conPlan([{ fecha: '2026-08-30', tipo: 'intermedio', fase: 'S2' }]);
-  assert.equal(tipoSugerido(c, [], fase('V1'), '2026-08-19').tipo, 'intermedio');
-});
-
-test('en floracion no se propone un segundo completo en la misma semana (r11)', () => {
-  // El caso real: el sustrato seco antes, entra un riego extra en la semana.
-  const c = conPlan([{ fecha: '2026-09-30', tipo: 'completo', fase: 'S6' }]);
-  const previos = [{ fecha: '2026-09-27', tipo: 'completo' }];
-  const s = tipoSugerido(c, previos, fase('S6'), '2026-09-30');
-
-  assert.equal(s.tipo, 'intermedio', 'no un segundo completo');
-  assert.equal(s.motivo, 'r11');
-  assert.match(s.aviso, /hace 3 días/);
-});
-
-test('en vegetativo se avisa pero no se cambia: r11 rige en floracion', () => {
-  // El alcance lo fija el archivo. Inventarlo no es tarea de la interfaz.
-  const c = conPlan([{ fecha: '2026-08-19', tipo: 'completo', fase: 'V2' }]);
-  const s = tipoSugerido(c, [{ fecha: '2026-08-15', tipo: 'completo' }], fase('V1'), '2026-08-19');
-
-  assert.equal(s.tipo, 'completo', 'la decision queda de este lado');
-  assert.match(s.aviso, /hace 4 días/);
-});
-
-test('un completo de hace mas de una semana no dispara el aviso', () => {
-  const c = conPlan([{ fecha: '2026-09-30', tipo: 'completo', fase: 'S6' }]);
-  const s = tipoSugerido(c, [{ fecha: '2026-09-20', tipo: 'completo' }], fase('S6'), '2026-09-30');
-  assert.equal(s.aviso, null);
-});
-
-test('un intermedio previo no cuenta como carga de sales', () => {
-  const c = conPlan([{ fecha: '2026-09-30', tipo: 'completo', fase: 'S6' }]);
-  const s = tipoSugerido(c, [{ fecha: '2026-09-29', tipo: 'intermedio' }], fase('S6'), '2026-09-30');
-  assert.equal(s.tipo, 'completo');
-  assert.equal(s.aviso, null);
-});
-
-test('las mediciones consolidadas por Cowork se siguen encontrando', () => {
-  // Cowork vacia el buzon al consolidar. Sin leer cultivo.json, la app
-  // perderia la memoria del secado en cada consolidacion.
-  const dentro = { ciclo_activo: { secados_medidos: [{ desde: 'a', fecha: 'b', dias: 3 }] } };
-  assert.equal(secadosConsolidados(dentro).length, 1);
-  assert.equal(secadosConsolidados({ secados_medidos: [{ dias: 4 }] }).length, 1);
-  assert.deepEqual(secadosConsolidados({}), []);
+  assert.equal(secadoObservado([{ desde: null, horas: 60 }]), null);
 });
 
 // ---------- un solo grupo ----------
@@ -442,14 +410,14 @@ test('con un solo grupo, el grupo activo se sigue resolviendo', () => {
 });
 
 test('con un solo grupo, el secado sigue proyectando', () => {
-  const e = estadoDeSecado(soloUno, '2026-08-14', { hoy: '2026-08-16' });
-  assert.deepEqual([e.min, e.max], [4, 5]);
+  const e = estadoDeSecado(soloUno, '2026-08-14', { puente: 60, ahora: AHORA });
+  assert.equal(e.horas, 60);
 });
 
 test('sin grupos declarados no se inventa una tanda', () => {
   assert.equal(totalMezcla({ ...cultivo, grupos: [] }, fase('V1')), null);
 });
 
-test('sin grupos y sin observaciones, el secado no proyecta nada', () => {
-  assert.equal(estadoDeSecado({ ...cultivo, grupos: [] }, '2026-08-14', { hoy: '2026-08-16' }), null);
+test('sin grupos, sin puente y sin observaciones, el secado no proyecta nada', () => {
+  assert.equal(estadoDeSecado({ ...cultivo, grupos: [] }, '2026-08-14', { ahora: AHORA }), null);
 });

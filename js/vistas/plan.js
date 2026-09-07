@@ -10,6 +10,7 @@ import { leerEstado, leerArchivoDeSubsistema } from '../api.js';
 import { subsistema } from '../contract.js';
 import { el, seccion, error, cargando } from '../ui.js';
 import { conCache } from '../cache.js';
+import { auditarCultivo, hallazgosDeclarados } from '../auditoria.js';
 import {
   hoyISO, fecha, fechaCorta, cuando, rango,
   faseDe, nombreDe, dosisOrdenadas,
@@ -225,14 +226,34 @@ function pintarEstimados(cultivo) {
   return s;
 }
 
+/**
+ * Contradicciones del archivo consigo mismo.
+ *
+ * Vive en el plan y no en la pantalla de todos los días: es consulta sobre el
+ * archivo, no una pregunta del sustrato. Existe porque el archivo se regenera
+ * desde bases anteriores y las correcciones se pierden; ya pasó tres veces.
+ */
+function pintarAuditoria(cultivo, estado) {
+  const items = [...hallazgosDeclarados(estado), ...auditarCultivo(cultivo, hoyISO())];
+  if (!items.length) return null;
+
+  const s = seccion('El archivo se contradice');
+  const ul = el('ul', 'mirada');
+  for (const i of items) ul.append(el('li', 'mirada-t', i.texto));
+  s.append(ul);
+  s.append(el('p', 'pie', 'Son incoherencias del archivo, no del cultivo.'));
+  return s;
+}
+
 export async function render(main) {
   main.textContent = '';
   const aviso = cargando('Leyendo el plan…');
   main.append(aviso);
 
-  let cultivo;
+  let cultivo, estadoLeido = null;
   try {
-    const estado = (await conCache('estado', leerEstado)).datos;
+    estadoLeido = (await conCache('estado', leerEstado)).datos;
+    const estado = estadoLeido;
     const sub = subsistema(estado, 'cultivo');
     if (!sub?.archivoId && !sub?.ruta) {
       throw new Error('estado.json no apunta a ningún archivo de cultivo');
@@ -251,6 +272,7 @@ export async function render(main) {
 
   const partes = [
     pintarCabecera(cultivo),
+    pintarAuditoria(cultivo, estadoLeido),
     pintarFases(cultivo),
     pintarRiegos(cultivo),
     pintarHitos(cultivo),

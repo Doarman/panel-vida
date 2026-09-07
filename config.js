@@ -22,6 +22,14 @@ export const CONFIG = {
   // reemplazo el ID cambia. Un ID guardado es un dato con fecha de vencimiento.
   ESTADO_FILE_ID: '1gpUSFVPYXZL88QPjKedS27IHW9AsvFI3',
 
+
+  // PUENTE, no destino. El sustrato de este cultivo seca en unas 60 horas y el
+  // archivo todavía lo trae en días enteros, donde 2.5 días no se puede decir.
+  // Se usa solo mientras cultivo.json no declare `ciclo_secado_horas` en el
+  // grupo: apenas lo declare, manda el archivo. Y cualquier medición de Nico
+  // le gana a los dos.
+  SECADO_HORAS: 60,
+
   CALENDAR_ID: 'primary',
   TZ: 'America/Argentina/Cordoba',
 };

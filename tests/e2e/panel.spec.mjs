@@ -251,44 +251,23 @@ test('ninguna pantalla habla en imperativo', async ({ page }) => {
   }
 });
 
-test('anotar que se secó queda registrado y corrige la proyección', async ({ page }) => {
-  // Un riego de hace tres días: el plan del fixture proyecta un secado de 4 a 5.
+test('el contador del sustrato cuenta en horas', async ({ page }) => {
+  // Este sustrato seca en unas 60 horas: dos dias y medio. En un contador de
+  // dias enteros ese numero no se puede decir, y por eso el anterior nunca
+  // coincidia con la maceta.
   const hace = (n) => {
     const d = new Date();
-    d.setHours(0, 0, 0, 0);
     d.setDate(d.getDate() - n);
     return d.toISOString().slice(0, 10);
   };
-  const riego = { id: 'r-previo', fecha: hace(3), fase: 'V1', tipo: 'completo' };
+  const riego = { id: 'r-previo', fecha: hace(2), fase: 'V1', tipo: 'completo' };
 
   await ir(page, 'cultivo', 'dia', { riegos: [riego] });
 
-  const caja = page.locator('.secado');
-  await expect(caja).toContainText('Día 3 de un secado de 4 a 5');
-
-  const boton = page.getByRole('button', { name: 'Ya se secó' });
-  await expect(boton).toBeVisible();
-  await boton.click();
-
-  // El ancla queda a la vista antes de guardar: si el riego no es el que
-  // corresponde, el numero sale mal y hay que poder verlo.
-  await expect(page.locator('.anotar-l')).toContainText('Contando desde el riego del');
-
-  // Los dias se editan: el sustrato pudo secar antes de lo que cuenta el ancla.
-  await page.locator('.anotar-n').fill('3');
-  await page.getByRole('button', { name: 'Anotar', exact: true }).click();
-
-  // Queda anotado como hecho, no como tarea cumplida.
-  await expect(caja).toContainText('Se secó a los 3 días', { timeout: 5000 });
-
-  // Ya anotado, se puede corregir: append-only en el archivo, pero el numero
-  // en pantalla tiene que poder arreglarse si salio mal.
-  await expect(page.getByRole('button', { name: 'Corregir el secado' })).toBeVisible();
-
-  // Y la proyección pasa a apoyarse en lo medido, sin perder el dato del plan.
-  const pie = page.locator('.secado').locator('xpath=following-sibling::p[1]');
-  await expect(pie).toContainText('secado medido');
-  await expect(pie).toContainText('el archivo estima 4 a 5');
+  await expect(page.locator('.estado-k')).toHaveText(/Próximo riego|Secado/);
+  await expect(page.locator('.estado-n')).toContainText(/h|Pide agua/);
+  await expect(page.locator('.estado-s')).toContainText('Regado hace');
+  await expect(page.getByRole('button', { name: 'Ya se secó' })).toBeVisible();
 });
 
 test('con un solo grupo la pantalla no se rompe ni muestra la seccion Grupos', async ({ page }) => {
@@ -308,21 +287,21 @@ test('con un solo grupo la pantalla no se rompe ni muestra la seccion Grupos', a
   await navNoTapa(page);
 });
 
-test('las contradicciones del archivo se ven en el telefono', async ({ page }) => {
+test('las contradicciones del archivo se ven en el plan', async ({ page }) => {
   // El archivo se regenera desde bases anteriores y las correcciones vuelven
-  // atras. Que aparezcan el mismo dia, y no recien en el repaso del lunes.
-  await ir(page, 'cultivo');
-
-  const seccion = page.locator('.titulo', { hasText: 'El archivo se contradice' });
-  await expect(seccion).toHaveCount(1);
+  // atras. Van en el plan y no en Cultivo: son consulta sobre el archivo, no
+  // la pregunta del sustrato que se hace todos los dias.
+  await ir(page, 'plan');
+  await expect(page.locator('.titulo', { hasText: 'El archivo se contradice' })).toHaveCount(1);
   await expect(page.locator('.mirada-t', { hasText: 'PPFD' })).toBeVisible();
+});
 
-  // Se puede ocultar como cualquier aviso: es informacion, no una tarea.
-  const antes = await page.locator('.mirada li').count();
-  await page.evaluate(() => {
-    const t = [...document.querySelectorAll('.mirada-t')].find((x) => /PPFD/.test(x.textContent));
-    t.closest('li').querySelector('.ocultar').click();
-  });
-  await page.waitForTimeout(320);
-  expect(await page.locator('.mirada li').count()).toBe(antes - 1);
+test('cultivo muestra cuatro cosas, no doce', async ({ page }) => {
+  // La pantalla tenia doce secciones y dejo de usarse. Lo que se mira todos los
+  // dias es una sola pregunta; el resto es consulta y vive en el plan.
+  await ir(page, 'cultivo');
+  const visibles = await page.locator('#main > *').count();
+  expect(visibles, 'secciones en Cultivo').toBeLessThanOrEqual(8);
+  await expect(page.locator('.estado-n')).toBeVisible();
+  await expect(page.locator('.titulo', { hasText: 'Requiere tu mirada' })).toHaveCount(0);
 });
