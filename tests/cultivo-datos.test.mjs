@@ -323,6 +323,27 @@ test('el puente de config le gana al rango en dias', () => {
   assert.equal(e.horas, 60);
 });
 
+test('el secado consolidado llega como rango y no se ignora en silencio', () => {
+  // Hoy ciclo_secado_horas es un escalar puesto a mano. Cuando Cowork
+  // consolide tres mediciones pasa a ser [min, max]. Si la app solo aceptara el
+  // escalar no se romperia: descartaria la medicion y seguiria con el puente,
+  // que es peor que romperse.
+  const conRango = { ...cultivo, grupos: [{ ...cultivo.grupos[0], ciclo_secado_horas: [54, 66] }] };
+  const e = estadoDeSecado(conRango, '2026-08-14', { puente: 60, ahora: AHORA });
+  assert.equal(e.origen, 'archivo');
+  assert.equal(e.horas, 60); // el punto medio del rango
+  assert.deepEqual([e.min, e.max], [54, 66]);
+});
+
+test('un rango invertido o incompleto no se toma como valido', () => {
+  const malo = { ...cultivo, grupos: [{ ...cultivo.grupos[0], ciclo_secado_horas: [60] }] };
+  assert.equal(estadoDeSecado(malo, '2026-08-14', { puente: 48, ahora: AHORA }).origen, 'puente');
+
+  const alReves = { ...cultivo, grupos: [{ ...cultivo.grupos[0], ciclo_secado_horas: [66, 54] }] };
+  const e = estadoDeSecado(alReves, '2026-08-14', { ahora: AHORA });
+  assert.deepEqual([e.min, e.max], [54, 66]); // se ordena en vez de descartarse
+});
+
 test('lo que declara el archivo en horas le gana al puente', () => {
   const conHoras = { ...cultivo, grupos: [{ ...cultivo.grupos[0], ciclo_secado_horas: 66 }] };
   const e = estadoDeSecado(conHoras, '2026-08-14', { puente: 60, ahora: AHORA });

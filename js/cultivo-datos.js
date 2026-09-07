@@ -288,28 +288,50 @@ export function secadoObservado(secados = [], faseId = null) {
 
   return {
     horas: Math.round(valores.reduce((a, b) => a + b, 0) / valores.length),
+    min: Math.min(...valores),
+    max: Math.max(...valores),
     n: recientes.length,
     mismaFase: deLaFase.length > 0,
     ultimo: todos.at(-1),
   };
 }
 
+/**
+ * `ciclo_secado_horas` puede venir de dos formas y las dos son válidas.
+ *
+ * Hoy es un escalar (60), puesto a mano. Cuando Cowork consolide tres
+ * mediciones pasa a ser un rango [min, max]. Si la app aceptara solo el
+ * escalar no se rompería: ignoraría la medición consolidada en silencio y
+ * seguiría proyectando con el puente, que es peor que romperse.
+ */
+function normalizarHoras(v) {
+  if (typeof v === 'number' && v > 0) return { horas: v, min: v, max: v };
+  if (Array.isArray(v) && v.length === 2 && v.every((n) => typeof n === 'number' && n > 0)) {
+    const [min, max] = [Math.min(...v), Math.max(...v)];
+    return { horas: Math.round((min + max) / 2), min, max };
+  }
+  return null;
+}
+
 /** Las horas de secado vigentes, y de dónde salieron. */
 export function horasDeSecado(cultivo, { secados = [], faseId = null, puente = null } = {}) {
   const medido = secadoObservado(secados, faseId);
-  if (medido) return { horas: medido.horas, origen: 'medido', n: medido.n, mismaFase: medido.mismaFase };
+  if (medido) {
+    return {
+      horas: medido.horas, min: medido.min, max: medido.max,
+      origen: 'medido', n: medido.n, mismaFase: medido.mismaFase,
+    };
+  }
 
   const g = grupoActivo(cultivo);
-  if (typeof g?.ciclo_secado_horas === 'number') {
-    return { horas: g.ciclo_secado_horas, origen: 'archivo', n: 0 };
-  }
-  if (typeof puente === 'number' && puente > 0) {
-    return { horas: puente, origen: 'puente', n: 0 };
-  }
+  const declarado = normalizarHoras(g?.ciclo_secado_horas);
+  if (declarado) return { ...declarado, origen: 'archivo', n: 0 };
+  const p = normalizarHoras(puente);
+  if (p) return { ...p, origen: 'puente', n: 0 };
 
   const d = g?.ciclo_secado_dias;
   if (Array.isArray(d) && d.length === 2) {
-    return { horas: Math.round(((d[0] + d[1]) / 2) * 24), origen: 'dias', n: 0, dias: d };
+    return { horas: Math.round(((d[0] + d[1]) / 2) * 24), min: d[0] * 24, max: d[1] * 24, origen: 'dias', n: 0 };
   }
   return null;
 }
