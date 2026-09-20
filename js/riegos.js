@@ -2,7 +2,7 @@
 //
 // Nunca toca cultivo.json. Escribe append-only en un archivo propio, creado por
 // la app con el scope drive.file, y Claude (Cowork) lo consolida después en
-// ciclo_activo.riegos_ejecutados durante el repaso semanal.
+// los riegos_ejecutados de cada ciclo durante el repaso semanal.
 //
 // Por qué así y no modificando cultivo.json directamente:
 //   - Son 24 KB con dos escritores (Cowork y esta app). Bajar, modificar y
@@ -48,7 +48,7 @@ const LISTAS = ['riegos', 'secados'];
 const esqueleto = () => ({
   _meta: {
     descripcion:
-      'Registros de la PWA Panel de Vida. Append-only. "riegos" se consolida en ciclo_activo.riegos_ejecutados; "secados" son observaciones de cuando el sustrato llego a seco, para corregir ciclo_secado_dias del grupo con dato medido en vez de estimado.',
+      'Registros de la PWA Panel de Vida. Append-only. Cada entrada trae "ciclo" (id del ciclo) y "grupo"; las que no lo traen son del grupo-1. "riegos" se consolida en riegos_ejecutados del ciclo que corresponda; "secados" son observaciones de cuando el sustrato llego a seco, en HORAS, para medir ciclo_secado_horas de ese grupo.',
     escribe: 'Panel de Vida (app movil)',
     consolida: 'Claude (Cowork)',
     version: 2,
@@ -243,10 +243,16 @@ export async function registrar(riego) {
  * tarda de verdad en secar este grupo, en esta fase, con este clima.
  *
  * `desde` es la fecha del riego que arrancó ese secado: sin ese ancla, el
- * número de días no se puede recalcular ni auditar después.
+ * número de horas no se puede recalcular ni auditar después.
+ *
+ * Los campos van nombrados uno por uno a propósito, pero eso tiene un costo:
+ * cuando la unidad pasó de días a horas, `horas` no estaba en la lista y se
+ * descartaba en silencio. Cada anotación subía sin el dato que la justifica.
+ * Ahora pasa todo lo que llega, y `ciclo`/`alcance` dicen a qué grupo y a qué
+ * subconjunto pertenece.
  */
-export async function registrarSecado({ desde, fecha, dias, fase }) {
-  return encolar('secados', `s-${fecha}`, { desde, fecha, dias, fase });
+export async function registrarSecado({ fecha, ...datos }) {
+  return encolar('secados', `s-${fecha}`, { fecha, ...datos });
 }
 
 /** Guarda en el teléfono primero y recién después intenta subir. */

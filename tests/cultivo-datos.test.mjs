@@ -240,11 +240,11 @@ test('los productos registrados dependen del tipo de riego', () => {
 // ---------- cantidades ----------
 
 test('el total de la tanda son las macetas por los litros de la fase', () => {
-  assert.deepEqual(totalMezcla(cultivo, fase('V1')), {
-    n: 8,
-    vol: [2.5, 3],
-    litros: '20–24 L',
-  });
+  const t = totalMezcla(cultivo, fase('V1'));
+  assert.equal(t.n, 8);
+  assert.deepEqual(t.vol, [2.5, 3]);
+  assert.deepEqual([t.min, t.max], [20, 24]);
+  assert.equal(t.litros, '20–24 L');
 });
 
 test('si el volumen no es un rango, no se muestra un rango falso', () => {
@@ -439,6 +439,17 @@ test('sin grupos declarados no se inventa una tanda', () => {
   assert.equal(totalMezcla({ ...cultivo, grupos: [] }, fase('V1')), null);
 });
 
-test('sin grupos, sin puente y sin observaciones, el secado no proyecta nada', () => {
-  assert.equal(estadoDeSecado({ ...cultivo, grupos: [] }, '2026-08-14', { ahora: AHORA }), null);
+test('sin secado conocido no se proyecta: se dice cuánto pasó y nada más', () => {
+  // Es el caso del grupo 2 al arrancar: tiene riegos pero ningún secado
+  // medido, y no hereda las 60 h del grupo 1.
+  const e = estadoDeSecado({ ...cultivo, grupos: [] }, '2026-08-14', { ahora: AHORA });
+  assert.equal(e.transcurridas, 48);
+  assert.equal(e.horas, null);
+  assert.equal(e.restantes, null);
+  assert.equal(e.seco, false);
+  assert.equal(e.pct, null);
+});
+
+test('sin riego registrado no hay estado de secado', () => {
+  assert.equal(estadoDeSecado(cultivo, null, { puente: 60, ahora: AHORA }), null);
 });

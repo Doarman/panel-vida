@@ -108,6 +108,88 @@ test('no reclama por un hito futuro', () => {
   assert.equal(buscar(auditarCultivo(sano, HOY), /pendiente/), undefined);
 });
 
+// --- la luz: lo que el plan pide contra lo que el panel da ---
+//
+// Es el hallazgo g2-a1, que se encontró comparando dos archivos a mano: el
+// plan del grupo 1 pedía 1000 y 1150 PPFD sobre un panel de ~800. Cada número
+// es razonable leído solo; la contradicción está entre dos bloques lejanos.
+
+const conPanel = (fases, luminaria) => ({
+  luminarias: [{ id: 'sf', nombre: 'SilverFox 480 EVO', ppfd_pico: 800, ...luminaria }],
+  grupos: [{ id: 'grupo-1', luminaria: 'sf' }],
+  ciclo_activo: { grupo: 'grupo-1', fases, riegos_programados: [], hitos: [] },
+  reglas_no_negociables: [],
+});
+
+test('detecta las fases que piden mas PPFD del que entrega el panel', () => {
+  const roto = conPanel([
+    { id: 'S4', tipo: 'floracion', fecha_inicio: '2026-09-14', fecha_fin: '2026-09-20', ppfd: 1000, ppfd_techo: 1200 },
+    { id: 'S5', tipo: 'floracion', fecha_inicio: '2026-09-21', fecha_fin: '2026-09-27', ppfd: 1150, ppfd_techo: 1200 },
+  ]);
+  const h = buscar(auditarCultivo(roto, HOY), /entrega ~800 de pico/);
+  assert.ok(h, 'el plan inalcanzable tiene que salir');
+  assert.match(h.texto, /S4 y S5 piden hasta 1150/);
+});
+
+test('un plan dentro del panel no genera ruido', () => {
+  const sanoLuz = conPanel([
+    { id: 'S4', tipo: 'floracion', fecha_inicio: '2026-09-14', fecha_fin: '2026-09-20', ppfd: 700, ppfd_techo: 800 },
+  ]);
+  assert.deepEqual(auditarCultivo(sanoLuz, HOY), []);
+});
+
+test('detecta el PPFD nominal por encima del techo de la propia fase', () => {
+  const roto = conPanel([
+    { id: 'S3', tipo: 'floracion', fecha_inicio: '2026-09-07', fecha_fin: '2026-09-13', ppfd: 675, ppfd_techo: 650 },
+  ]);
+  assert.ok(buscar(auditarCultivo(roto, HOY), /S3 declara 675 PPFD con techo 650/));
+});
+
+test('un techo null en floracion es un techo sin declarar, no la ausencia de techo', () => {
+  const roto = conPanel([
+    { id: 'S3', tipo: 'floracion', fecha_inicio: '2026-09-07', fecha_fin: '2026-09-13', ppfd: 675, ppfd_techo: null },
+    { id: 'S4', tipo: 'floracion', fecha_inicio: '2026-09-14', fecha_fin: '2026-09-20', ppfd: 700, ppfd_techo: null },
+  ]);
+  const h = buscar(auditarCultivo(roto, HOY), /techo de PPFD/);
+  assert.ok(h);
+  assert.match(h.texto, /S3 y S4 son de floración y no declaran/);
+
+  // En vegetativo no se reclama: el techo nace de r1, que es de floración.
+  const veg = conPanel([
+    { id: 'V1', tipo: 'vegetativo', fecha_inicio: '2026-08-14', fecha_fin: '2026-08-17', ppfd: 360, ppfd_techo: null },
+  ]);
+  assert.equal(buscar(auditarCultivo(veg, HOY), /techo de PPFD/), undefined);
+});
+
+test('la excepcion declarada por subconjunto no se marca como incoherencia', () => {
+  // Las 3 veteranas van a 700 con techo propio de 700 mientras la fase, para
+  // el resto, sigue en 500. Está decidido y escrito: no es una contradicción.
+  const conExcepcion = conPanel([
+    {
+      id: 'S1', tipo: 'floracion', fecha_inicio: '2026-09-23', fecha_fin: '2026-09-29',
+      ppfd: 500, ppfd_techo: 500,
+      ppfd_por_subconjunto: {
+        A: { ppfd: 700, ppfd_techo: 700 },
+        B: { ppfd: 500, ppfd_techo: 500 },
+      },
+    },
+  ]);
+  assert.deepEqual(auditarCultivo(conExcepcion, HOY), []);
+
+  // Pero si el subconjunto se pasa de SU techo, sí.
+  const pasado = structuredClone(conExcepcion);
+  pasado.ciclo_activo.fases[0].ppfd_por_subconjunto.A.ppfd = 900;
+  assert.ok(buscar(auditarCultivo(pasado, HOY), /S1 \(subconjunto A\) declara 900 PPFD con techo 700/));
+});
+
+test('con r15 en el archivo, el hallazgo la cita', () => {
+  const roto = conPanel([
+    { id: 'S3', tipo: 'floracion', fecha_inicio: '2026-09-07', fecha_fin: '2026-09-13', ppfd: 675, ppfd_techo: null },
+  ]);
+  roto.reglas_no_negociables = [{ id: 'r15', regla: 'El PPFD nominal no puede superar su techo' }];
+  assert.match(buscar(auditarCultivo(roto, HOY), /techo de PPFD/).texto, /\(r15\)\.$/);
+});
+
 // --- lo que Cowork deja anotado ---
 
 test('los hallazgos que deja Cowork en estado.json se muestran', () => {

@@ -6,18 +6,19 @@
 //
 // Se lee, no se opera. Por eso no hay ningún control.
 
-import { leerEstado, leerArchivoDeSubsistema } from '../api.js';
-import { subsistema } from '../contract.js';
+import { leerEstado } from '../api.js';
+import { subsistema, nombreDeGrupo } from '../contract.js';
 import { el, seccion, error, cargando } from '../ui.js';
 import { conCache } from '../cache.js';
-import { auditarCultivo, hallazgosDeclarados } from '../auditoria.js';
+import { auditarCultivo, auditarNomenclatura, hallazgosDeclarados } from '../auditoria.js';
+import { cargarGrupos, grupoElegido, selectorDeGrupos } from '../cultivo-grupos.js';
 import {
   hoyISO, fecha, fechaCorta, cuando, rango,
-  faseDe, nombreDe, dosisOrdenadas,
+  faseDe, nombreDe, dosisOrdenadas, cicloDe, subconjuntosDe, volumenTexto,
 } from '../cultivo-datos.js';
 
 function pintarCabecera(cultivo) {
-  const c = cultivo?.ciclo_activo;
+  const c = cicloDe(cultivo);
   const s = el('section', 'ciclo tarjeta');
   s.append(el('p', 'ciclo-n', 'Plan del ciclo'));
   s.append(el('h3', 'ciclo-f', c?.nombre || 'Sin ciclo activo'));
@@ -34,10 +35,11 @@ function pintarCabecera(cultivo) {
 
 /** Cada fase en una tarjeta compacta: luz, agua y qué lleva la mezcla. */
 function pintarFases(cultivo) {
-  const fases = cultivo?.ciclo_activo?.fases || [];
+  const fases = cicloDe(cultivo)?.fases || [];
   if (!fases.length) return null;
 
   const actual = faseDe(cultivo);
+  const subs = subconjuntosDe(cultivo);
   const s = seccion('Fases');
 
   for (const f of fases) {
@@ -50,12 +52,22 @@ function pintarFases(cultivo) {
     cab.append(el('span', 'fase-f', `${fechaCorta(f.fecha_inicio)}–${fechaCorta(f.fecha_fin)}`));
     b.append(cab);
 
+    // Con subconjuntos, el PPFD de cada uno cuando difiere: la excepción de
+    // las veteranas en S1-S2 tiene que verse, no quedar escondida en el grupo.
+    const porSub = Object.entries(f.ppfd_por_subconjunto || {})
+      .filter(([, x]) => x && typeof x.ppfd === 'number')
+      .map(([id, x]) => `${subs.find((s) => s.id === id)?.nombre || id} ${x.ppfd}`);
+    const ppfd = porSub.length
+      ? `PPFD ${porSub.join(' / ')}`
+      : `${f.ppfd ?? '—'} PPFD${f.ppfd_techo ? ` (techo ${f.ppfd_techo})` : ''}`;
+
     const datos = [
-      `${f.ppfd ?? '—'} PPFD${f.ppfd_techo ? ` (techo ${f.ppfd_techo})` : ''}`,
+      ppfd,
       `EC ${rango(f.ec_objetivo)}`,
       `pH ${rango(f.ph_entrada)}`,
-      `${rango(f.volumen_por_maceta_l)} L/maceta`,
-    ];
+      `${volumenTexto(cultivo, f.volumen_por_maceta_l)}/maceta`,
+      Array.isArray(f.drenaje_objetivo_pct) ? `drenaje ${rango(f.drenaje_objetivo_pct)} %` : null,
+    ].filter(Boolean);
     b.append(el('p', 'fase-d', datos.join('  ·  ')));
 
     const { dosis } = dosisOrdenadas(cultivo, f);
@@ -63,6 +75,16 @@ function pintarFases(cultivo) {
       b.append(
         el('p', 'fase-mix',
           dosis.map((d) => `${nombreDe(d.clave)} ${d.valor}`).join('   ·   '))
+      );
+    }
+
+    // Flora Booster y lo que venga: una vez por fase, aparte de la mezcla (r14).
+    for (const a of f.aplicaciones_evento || []) {
+      const k = Object.keys(a || {}).find((x) => /^dosis_(ml|g)_l$/.test(x));
+      if (!a?.producto || !k) continue;
+      b.append(
+        el('p', 'fase-ev',
+          `${nombreDe(a.producto)} ${a[k]}${a.aplicacion_numero ? ` · aplicación ${a.aplicacion_numero}` : ''} · primer completo de la fase`)
       );
     }
 
@@ -83,9 +105,10 @@ function pintarFases(cultivo) {
 }
 
 function pintarRiegos(cultivo) {
-  const lista = cultivo?.ciclo_activo?.riegos_programados || [];
+  const lista = cicloDe(cultivo)?.riegos_programados || [];
   if (!lista.length) return null;
 
+  const subs = subconjuntosDe(cultivo);
   const hoy = hoyISO();
   const s = seccion('Riegos proyectados');
   const ul = el('ul', 'tabla');
@@ -94,7 +117,10 @@ function pintarRiegos(cultivo) {
     const li = el('li');
     if (r.fecha < hoy) li.classList.add('pasado');
     li.append(el('span', 'tb-f', fechaCorta(r.fecha)));
-    li.append(el('span', 'tb-t', r.tipo));
+    const para = r.alcance && r.alcance !== 'todos'
+      ? ` · ${subs.find((s) => s.id === r.alcance)?.nombre || r.alcance}`
+      : '';
+    li.append(el('span', 'tb-t', `${r.tipo}${para}`));
     li.append(el('span', 'tb-x', r.fase));
     ul.append(li);
   }
@@ -105,7 +131,7 @@ function pintarRiegos(cultivo) {
 }
 
 function pintarHitos(cultivo) {
-  const lista = (cultivo?.ciclo_activo?.hitos || []).filter((h) => h.estado !== 'hecho');
+  const lista = (cicloDe(cultivo)?.hitos || []).filter((h) => h.estado !== 'hecho');
   if (!lista.length) return null;
 
   const hoy = hoyISO();
@@ -125,7 +151,7 @@ function pintarHitos(cultivo) {
 
 /** El bloque de sanidad es nuevo en cultivo.json y no se veía en ningún lado. */
 function pintarSanidad(cultivo) {
-  const san = cultivo?.ciclo_activo?.sanidad;
+  const san = cicloDe(cultivo)?.sanidad;
   if (!san) return null;
 
   const s = seccion('Sanidad');
@@ -153,27 +179,48 @@ function pintarSanidad(cultivo) {
   return s;
 }
 
-/** Grupos que todavía no se integraron. Están declarados y conviene verlos. */
-function pintarFuturos(cultivo) {
-  const lista = cultivo?.grupos_futuros || [];
+/**
+ * Grupos que todavía no se integraron.
+ *
+ * Salen de estado.json y no de cultivo.json: la nomenclatura de grupos la fija
+ * el índice del ecosistema, y los bloques `grupos_futuros` de los archivos
+ * arrastran los nombres viejos, con los que "grupo-3" era el lote de 11.
+ */
+function pintarSinIntegrar(estado, grupos) {
+  const nombres = estado?.subsistemas?.cultivo?.nomenclatura_de_grupos || {};
+  const conArchivo = new Set(grupos.map((g) => g.id));
+
+  const lista = Object.entries(nombres).filter(
+    ([id, texto]) => /^grupo-\d+$/.test(id) && typeof texto === 'string' && !conArchivo.has(id)
+  );
   if (!lista.length) return null;
 
   const s = seccion('Todavía sin integrar');
-  for (const g of lista) {
+  for (const [id, texto] of lista) {
     const f = el('div', 'ficha');
     const cab = el('div', 'ficha-h');
-    cab.append(el('h3', 'ficha-t', g.id));
-    if (g.estado) cab.append(el('span', 'badge lejos', g.estado));
+    cab.append(el('h3', 'ficha-t', nombreDeGrupo(id)));
     f.append(cab);
-
-    const linea = [
-      g.cantidad_plantas != null ? `${g.cantidad_plantas} plantas` : null,
-      g.luminaria,
-      g.ingreso_a_sala_estimado ? `ingreso ${g.ingreso_a_sala_estimado}` : null,
-    ].filter(Boolean);
-    if (linea.length) f.append(el('p', 'ficha-d', linea.join(' · ')));
-    if (g.nota) f.append(el('p', 'ficha-sub', g.nota));
+    f.append(el('p', 'ficha-d', texto));
     s.append(f);
+  }
+  return s;
+}
+
+/** Lo observado en las plantas, crudo. Hoy: la veterana con amarillamiento. */
+function pintarObservaciones(cultivo) {
+  const lista = (cicloDe(cultivo)?.observaciones || []).filter((o) => o?.observacion);
+  if (!lista.length) return null;
+
+  const s = seccion('Observaciones');
+  for (const o of lista) {
+    const b = el('div', 'ficha');
+    const cab = el('div', 'ficha-h');
+    cab.append(el('h3', 'ficha-t', o.fecha ? fecha(o.fecha) : 'Sin fecha'));
+    if (o.estado) cab.append(el('span', 'badge atencion', o.estado));
+    b.append(cab);
+    b.append(el('p', 'ficha-d', o.observacion));
+    s.append(b);
   }
   return s;
 }
@@ -234,7 +281,11 @@ function pintarEstimados(cultivo) {
  * desde bases anteriores y las correcciones se pierden; ya pasó tres veces.
  */
 function pintarAuditoria(cultivo, estado) {
-  const items = [...hallazgosDeclarados(estado), ...auditarCultivo(cultivo, hoyISO())];
+  const items = [
+    ...hallazgosDeclarados(estado),
+    ...auditarNomenclatura(estado, cultivo),
+    ...auditarCultivo(cultivo, hoyISO()),
+  ];
   if (!items.length) return null;
 
   const s = seccion('El archivo se contradice');
@@ -250,15 +301,10 @@ export async function render(main) {
   const aviso = cargando('Leyendo el plan…');
   main.append(aviso);
 
-  let cultivo, estadoLeido = null;
+  let grupos, estadoLeido = null;
   try {
     estadoLeido = (await conCache('estado', leerEstado)).datos;
-    const estado = estadoLeido;
-    const sub = subsistema(estado, 'cultivo');
-    if (!sub?.archivoId && !sub?.ruta) {
-      throw new Error('estado.json no apunta a ningún archivo de cultivo');
-    }
-    cultivo = (await conCache('cultivo', () => leerArchivoDeSubsistema(sub))).datos;
+    grupos = await cargarGrupos(subsistema(estadoLeido, 'cultivo'));
   } catch (e) {
     aviso.remove();
     main.append(error('Plan', e));
@@ -267,22 +313,43 @@ export async function render(main) {
 
   aviso.remove();
 
+  // El mismo grupo que se estaba mirando en Cultivo: el plan es su apéndice.
+  const g = grupoElegido(grupos);
+  const selector = selectorDeGrupos(grupos, g, () => render(main));
+  if (selector) main.append(selector);
+
   const volver = el('a', 'boton-enlace', '← Volver a Cultivo');
   volver.href = '#/cultivo';
 
-  const partes = [
-    pintarCabecera(cultivo),
-    pintarAuditoria(cultivo, estadoLeido),
-    pintarFases(cultivo),
-    pintarRiegos(cultivo),
-    pintarHitos(cultivo),
-    pintarSanidad(cultivo),
-    pintarFuturos(cultivo),
-    pintarMezclaOrden(cultivo),
-    pintarReglas(cultivo),
-    pintarEstimados(cultivo),
-    volver,
+  if (!g.cultivo) {
+    main.append(error(g.etiqueta, g.error || new Error('No se pudo leer el archivo de este grupo.')));
+    main.append(volver);
+    return;
+  }
+
+  const { cultivo } = g;
+  const secciones = [
+    () => pintarCabecera(cultivo),
+    () => pintarAuditoria(cultivo, estadoLeido),
+    () => pintarObservaciones(cultivo),
+    () => pintarFases(cultivo),
+    () => pintarRiegos(cultivo),
+    () => pintarHitos(cultivo),
+    () => pintarSanidad(cultivo),
+    () => pintarSinIntegrar(estadoLeido, grupos),
+    () => pintarMezclaOrden(cultivo),
+    () => pintarReglas(cultivo),
+    () => pintarEstimados(cultivo),
   ];
 
-  for (const p of partes) if (p) main.append(p);
+  // Igual que en Cultivo: una sección que falla no se lleva puesta la pantalla.
+  for (const armar of secciones) {
+    try {
+      const p = armar();
+      if (p) main.append(p);
+    } catch (e) {
+      main.append(error('Plan', e));
+    }
+  }
+  main.append(volver);
 }

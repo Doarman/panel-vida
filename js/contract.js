@@ -63,17 +63,62 @@ export function subsistema(estado, clave) {
     reglas: Array.isArray(s.reglas_criticas_para_el_asistente)
       ? s.reglas_criticas_para_el_asistente
       : [],
+    grupos: gruposDe(s),
   };
 }
 
-/** Alertas de todos los subsistemas, con su origen. Para "Requiere tu mirada". */
+/**
+ * Los archivos de datos de un subsistema con ciclos en paralelo.
+ *
+ * `archivos_por_grupo` apareció con el segundo ciclo de cultivo: cada grupo
+ * tiene su archivo. `archivo_datos` se conserva apuntando al del grupo 1, que
+ * es además el canónico, el que guarda los bloques globales que los otros no
+ * copian. Sin la lista nueva, un solo grupo: el archivo de siempre.
+ */
+function gruposDe(s) {
+  const canonico = s.archivo_datos || null;
+  const lista = Array.isArray(s.archivos_por_grupo)
+    ? s.archivos_por_grupo.filter((g) => g?.archivo)
+    : [];
+
+  if (!lista.length) {
+    return [{ grupo: null, ruta: canonico, archivoId: s.drive_file_id || null, resumen: s.resumen || {}, canonico: true }];
+  }
+
+  const hayCanonico = lista.some((g) => g.archivo === canonico);
+  return lista.map((g, i) => ({
+    grupo: g.grupo || null,
+    ruta: g.archivo,
+    archivoId: s.grupos?.[g.grupo]?.drive_file_id || null,
+    resumen: s.grupos?.[g.grupo]?.resumen || {},
+    canonico: hayCanonico ? g.archivo === canonico : i === 0,
+  }));
+}
+
+/** "grupo-2" → "Grupo 2". */
+export const nombreDeGrupo = (id) =>
+  String(id || '').replace(/-/g, ' ').replace(/^./, (c) => c.toUpperCase());
+
+/**
+ * Alertas de todos los subsistemas, con su origen. Para "Requiere tu mirada".
+ *
+ * Con ciclos en paralelo, cada grupo trae las suyas en `grupos.<id>.resumen`,
+ * y la etiqueta dice de cuál es: dos alertas de riego sin el grupo no se
+ * distinguen.
+ */
 export function alertas(estado) {
   const subs = estado?.subsistemas || {};
   const salida = [];
+  const sumar = (lista, origen, etiqueta) => {
+    for (const a of lista || []) {
+      if (typeof a === 'string' && a.trim()) salida.push({ origen, etiqueta, texto: a });
+    }
+  };
   for (const [clave, s] of Object.entries(subs)) {
     if (s?.activo === false) continue;
-    for (const a of s?.resumen?.alertas || []) {
-      if (typeof a === 'string' && a.trim()) salida.push({ origen: clave, texto: a });
+    sumar(s?.resumen?.alertas, clave, clave);
+    for (const [id, g] of Object.entries(s?.grupos || {})) {
+      sumar(g?.resumen?.alertas, clave, `${clave} · ${nombreDeGrupo(id).toLowerCase()}`);
     }
   }
   return salida;

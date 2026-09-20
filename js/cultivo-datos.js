@@ -54,16 +54,123 @@ export function cuando(iso) {
 
 export const rango = (r) => (Array.isArray(r) && r.length === 2 ? `${r[0]}–${r[1]}` : (r ?? '—'));
 
+// ---------- ciclo ----------
+
+/**
+ * El ciclo que se muestra, venga del esquema que venga.
+ *
+ * cultivo.json guarda un solo ciclo en `ciclo_activo`. cultivo_grupo2.json ya
+ * usa el esquema al que el propio cultivo.json dice que conviene migrar: un
+ * array `ciclos` y un puntero `ciclo_activo_id`. Conviven los dos, y todo lo
+ * que lee fases, riegos o hitos pasa por acá para no tener que saberlo.
+ */
+export function cicloDe(cultivo) {
+  if (!cultivo) return null;
+  if (cultivo.ciclo_activo && typeof cultivo.ciclo_activo === 'object') return cultivo.ciclo_activo;
+  const ciclos = Array.isArray(cultivo.ciclos) ? cultivo.ciclos : [];
+  return (
+    ciclos.find((c) => c?.id === cultivo.ciclo_activo_id) ||
+    (ciclos.length === 1 ? ciclos[0] : null)
+  );
+}
+
+// Los bloques que cultivo_grupo2.json no copia a propósito: viven una sola vez,
+// en cultivo.json. Es el respaldo por si el archivo no los declara en
+// `referencias.bloques_no_copiados`.
+const BLOQUES_GLOBALES = [
+  'sitio', 'productos', 'orden_de_mezcla', 'tipos_de_riego', 'modelo_de_nutricion',
+  'reglas_no_negociables', 'registro_crudo', 'regimen_riego_acelerado',
+  'alertas_ambientales', 'linea_base', 'pendientes',
+];
+
+/**
+ * El archivo de un grupo, completado con los bloques globales del canónico.
+ *
+ * No se copian para no tener dos versiones que "cambian juntas": las
+ * correcciones de v1.2.0 se perdieron tres veces así. Lo que el archivo propio
+ * sí declara manda siempre; el canónico solo llena lo que falta.
+ *
+ * Las luminarias son la excepción: el archivo del grupo puede traer
+ * correcciones (el pico real medido por Nico) mientras el canónico no las
+ * incorpore, y esas pisan la ficha.
+ */
+export function unirConCanonico(propio, canonico) {
+  if (!propio || !canonico || propio === canonico) return propio;
+
+  const declarados = propio?.referencias?.bloques_no_copiados;
+  const bloques = Array.isArray(declarados) && declarados.length ? declarados : BLOQUES_GLOBALES;
+
+  const unido = { ...propio };
+  for (const k of bloques) {
+    if (unido[k] == null && canonico[k] != null) unido[k] = canonico[k];
+  }
+
+  const base = Array.isArray(propio.luminarias) ? propio.luminarias : canonico.luminarias || [];
+  const correcciones = propio.luminarias_correcciones || {};
+  const esLuminaria = (v) => v && typeof v === 'object' && !Array.isArray(v);
+  const vistas = new Set();
+  unido.luminarias = base.map((l) => {
+    vistas.add(l?.id);
+    return esLuminaria(correcciones[l?.id]) ? { ...l, ...correcciones[l.id] } : l;
+  });
+  for (const [id, l] of Object.entries(correcciones)) {
+    if (esLuminaria(l) && !vistas.has(id)) unido.luminarias.push({ id, ...l });
+  }
+
+  return unido;
+}
+
+/**
+ * Los registros que pertenecen a un ciclo.
+ *
+ * Los que no dicen `ciclo` son de antes de que hubiera dos, y estado.json los
+ * asigna todos al grupo 1. No se infiere por fecha: dos ciclos en paralelo se
+ * superponen en el calendario y la fecha no dice de cuál es un riego.
+ */
+export function delCiclo(registros = [], ciclo, { legado = false } = {}) {
+  const ids = [ciclo?.id, ciclo?.grupo].filter(Boolean);
+  return registros.filter((r) => (r?.ciclo ? ids.includes(r.ciclo) : legado));
+}
+
+/**
+ * Lo que toca a un subconjunto: lo suyo y lo que fue para todos.
+ * Sin subconjunto elegido, todo.
+ */
+export function delAlcance(registros = [], alcance = null) {
+  if (!alcance) return registros;
+  return registros.filter((r) => !r?.alcance || r.alcance === 'todos' || r.alcance === alcance);
+}
+
 // ---------- fases ----------
 
 export function faseDe(cultivo, iso = hoyISO()) {
-  return (cultivo?.ciclo_activo?.fases || []).find(
+  return (cicloDe(cultivo)?.fases || []).find(
     (f) => f.fecha_inicio <= iso && iso <= f.fecha_fin
   );
 }
 
+/** El día 1 de flor: el flip real si ya se anotó, si no el de la primera fase de flor. */
+export function inicioDeFlor(cultivo) {
+  const c = cicloDe(cultivo);
+  return (
+    c?.fecha_flip_real ||
+    (c?.fases || []).find((f) => f.tipo === 'floracion')?.fecha_inicio ||
+    null
+  );
+}
+
+/**
+ * Día de ciclo, empezando en 1.
+ *
+ * En vegetativo se cuenta desde el trasplante; desde el flip se reinicia y
+ * cuenta días de flor. Lo dicen los dos archivos en su nota de día de ciclo, y
+ * así lo informa el brief: "día 27 de floración", no "día 49".
+ */
 export function diaDeCiclo(cultivo, iso = hoyISO()) {
-  const inicio = cultivo?.ciclo_activo?.fecha_inicio;
+  const c = cicloDe(cultivo);
+  const flip = inicioDeFlor(cultivo);
+  const enFlor = faseDe(cultivo, iso)?.tipo === 'floracion' && flip && flip <= iso;
+  const inicio = enFlor ? flip : c?.fecha_inicio;
   if (!inicio) return null;
   const d = dias(inicio, iso);
   return d == null ? null : d + 1;
@@ -223,14 +330,34 @@ export function ordenDeLaFase(cultivo, dosis) {
   });
 }
 
-export function sumarDias(iso, n) {
-  const t = Date.parse(`${iso}T00:00:00Z`);
-  if (Number.isNaN(t)) return null;
-  return new Date(t + n * 86400000).toISOString().slice(0, 10);
+export function grupoActivo(cultivo) {
+  return (cultivo?.grupos || []).find((g) => g.id === cicloDe(cultivo)?.grupo) || null;
 }
 
-export function grupoActivo(cultivo) {
-  return (cultivo?.grupos || []).find((g) => g.id === cultivo?.ciclo_activo?.grupo) || null;
+/** Los subconjuntos del grupo (A veteranas, B nuevas…). Vacío si no tiene. */
+export function subconjuntosDe(cultivo) {
+  const s = grupoActivo(cultivo)?.subconjuntos;
+  return Array.isArray(s) ? s.filter((x) => x?.id) : [];
+}
+
+/** La luminaria del grupo, con las correcciones ya aplicadas si las hubo. */
+export function luminariaDe(cultivo) {
+  const id = grupoActivo(cultivo)?.luminaria;
+  return (cultivo?.luminarias || []).find((l) => l?.id === id) || null;
+}
+
+/**
+ * Volumen por maceta, legible. Puede venir como rango para todo el grupo o
+ * por subconjunto, porque tres plantas grandes y ocho chicas en la misma
+ * maceta no toman lo mismo.
+ */
+export function volumenTexto(cultivo, vol) {
+  if (Array.isArray(vol)) return `${rango(vol)} L`;
+  if (!vol || typeof vol !== 'object') return '—';
+  const partes = subconjuntosDe(cultivo)
+    .filter((s) => Array.isArray(vol[s.id]))
+    .map((s) => `${s.nombre || s.id} ${rango(vol[s.id])}`);
+  return partes.length ? `${partes.join(' · ')} L` : '—';
 }
 
 /**
@@ -313,8 +440,13 @@ function normalizarHoras(v) {
   return null;
 }
 
-/** Las horas de secado vigentes, y de dónde salieron. */
-export function horasDeSecado(cultivo, { secados = [], faseId = null, puente = null } = {}) {
+/**
+ * Las horas de secado vigentes, y de dónde salieron.
+ *
+ * Con `alcance`, lo que el archivo declare para ese subconjunto le gana a lo
+ * del grupo: las veteranas y las nuevas del grupo 2 no secan igual.
+ */
+export function horasDeSecado(cultivo, { secados = [], faseId = null, puente = null, alcance = null } = {}) {
   const medido = secadoObservado(secados, faseId);
   if (medido) {
     return {
@@ -324,12 +456,16 @@ export function horasDeSecado(cultivo, { secados = [], faseId = null, puente = n
   }
 
   const g = grupoActivo(cultivo);
-  const declarado = normalizarHoras(g?.ciclo_secado_horas);
+  const sub = alcance ? subconjuntosDe(cultivo).find((s) => s.id === alcance) : null;
+  const declarado = normalizarHoras(sub?.ciclo_secado_horas) || normalizarHoras(g?.ciclo_secado_horas);
   if (declarado) return { ...declarado, origen: 'archivo', n: 0 };
   const p = normalizarHoras(puente);
   if (p) return { ...p, origen: 'puente', n: 0 };
 
-  const d = g?.ciclo_secado_dias;
+  // Cuando el archivo ya declara horas marca los días como obsoletos. Si aun
+  // así solo quedaran los días, no se usan: 4-5 días fue justo el número que
+  // nunca coincidió con la maceta.
+  const d = g?._ciclo_secado_dias_obsoleto ? null : g?.ciclo_secado_dias;
   if (Array.isArray(d) && d.length === 2) {
     return { horas: Math.round(((d[0] + d[1]) / 2) * 24), min: d[0] * 24, max: d[1] * 24, origen: 'dias', n: 0 };
   }
@@ -343,14 +479,26 @@ export function horasDeSecado(cultivo, { secados = [], faseId = null, puente = n
  * que reparte el error en doce horas para cada lado en vez de acumularlo.
  */
 export function estadoDeSecado(cultivo, ultimoRiego, opciones = {}) {
-  const { secados = [], faseId = null, puente = null, ahora = Date.now() } = opciones;
-  const base = horasDeSecado(cultivo, { secados, faseId, puente });
-  if (!ultimoRiego || !base) return null;
+  const { secados = [], faseId = null, puente = null, alcance = null, ahora = Date.now() } = opciones;
+  if (!ultimoRiego) return null;
 
   const desde = Date.parse(ultimoRiego.includes('T') ? ultimoRiego : `${ultimoRiego}T12:00:00`);
   if (Number.isNaN(desde)) return null;
 
   const transcurridas = Math.max(0, Math.round((ahora - desde) / 3600000));
+  const yaSeco = secados.find((s) => s?.desde === ultimoRiego) || null;
+
+  // Sin secado conocido no se proyecta: se dice cuánto pasó y nada más. Es el
+  // caso de un grupo nuevo, que no hereda las horas de otro (distinta maceta,
+  // porte y luz). Anotar el primer secado es lo que lo vuelve dato.
+  const base = horasDeSecado(cultivo, { secados, faseId, puente, alcance });
+  if (!base) {
+    return {
+      horas: null, min: null, max: null, origen: null, n: 0,
+      transcurridas, restantes: null, seco: false, pct: null, yaSeco,
+    };
+  }
+
   const restantes = base.horas - transcurridas;
 
   return {
@@ -360,7 +508,7 @@ export function estadoDeSecado(cultivo, ultimoRiego, opciones = {}) {
     seco: restantes <= 0,
     pct: Math.max(0, Math.min(100, (transcurridas / base.horas) * 100)),
     // La observación de ESTE secado, si ya la anotó.
-    yaSeco: secados.find((s) => s?.desde === ultimoRiego) || null,
+    yaSeco,
   };
 }
 
@@ -371,15 +519,78 @@ export function aguaBase(cultivo) {
   return { ec: a.ec_ms_cm, nota: a.nota_critica || null, ph: a.ph_origen ?? null };
 }
 
-/** Litros totales de la tanda: cuántas macetas por cuántos litros cada una. */
+/**
+ * Litros totales de la tanda: cuántas macetas por cuántos litros cada una.
+ *
+ * Con subconjuntos, cada uno con su volumen: un solo tanque, dos tamaños de
+ * planta. Es referencia para preparar, no criterio de riego: lo que cuenta es
+ * llegar al drenaje objetivo.
+ */
 export function totalMezcla(cultivo, fase) {
-  const grupo = (cultivo?.grupos || []).find((g) => g.id === cultivo?.ciclo_activo?.grupo);
-  const n = grupo?.cantidad_plantas;
+  const grupo = grupoActivo(cultivo);
   const vol = fase?.volumen_por_maceta_l;
-  if (!n || !Array.isArray(vol)) return null;
-  const min = +(n * vol[0]).toFixed(1);
-  const max = +(n * vol[1]).toFixed(1);
-  return { n, vol, litros: min === max ? `${min} L` : `${min}–${max} L` };
+  if (!grupo || !vol) return null;
+
+  let partes;
+  if (Array.isArray(vol)) {
+    if (!grupo.cantidad_plantas || vol.length !== 2) return null;
+    partes = [{ id: null, nombre: null, n: grupo.cantidad_plantas, vol }];
+  } else {
+    partes = subconjuntosDe(cultivo)
+      .filter((s) => Array.isArray(vol[s.id]) && s.cantidad_plantas)
+      .map((s) => ({ id: s.id, nombre: s.nombre || s.id, n: s.cantidad_plantas, vol: vol[s.id] }));
+    if (!partes.length) return null;
+  }
+
+  const suma = (i) => +partes.reduce((a, p) => a + p.n * p.vol[i], 0).toFixed(1);
+  const min = suma(0);
+  const max = suma(1);
+  return {
+    n: partes.reduce((a, p) => a + p.n, 0),
+    vol: Array.isArray(vol) ? vol : null,
+    partes,
+    min,
+    max,
+    litros: min === max ? `${min} L` : `${min}–${max} L`,
+  };
+}
+
+/**
+ * Las aplicaciones de evento de la fase (hoy, Flora Booster), y si ya pasaron.
+ *
+ * Regla r14: no son concentración de la solución sino una aplicación única, en
+ * el PRIMER completo de la fase. Si se leyeran como una dosis más, con secado
+ * de 60 horas entrarían dos o tres por fase y las cuatro del ciclo serían
+ * siete u ocho. Por eso viven fuera de `nutricion`, y si ya pasaron se decide
+ * contra los riegos registrados, no contra el calendario.
+ */
+export function eventosDeLaFase(cultivo, fase, riegos = []) {
+  const lista = Array.isArray(fase?.aplicaciones_evento) ? fase.aplicaciones_evento : [];
+  if (!lista.length) return [];
+
+  const primerCompleto =
+    riegos
+      .filter((r) => r?.fase === fase.id && r.tipo === 'completo' && r.fecha)
+      .map((r) => r.fecha)
+      .sort()[0] || null;
+
+  const delCicloEntero = (cicloDe(cultivo)?.fases || []).flatMap((f) => f.aplicaciones_evento || []);
+
+  const salida = [];
+  for (const a of lista) {
+    const k = Object.keys(a || {}).find((x) => /^dosis_(ml|g)_l$/.test(x));
+    if (!a?.producto || !k || typeof a[k] !== 'number') continue;
+    salida.push({
+      clave: a.producto,
+      valor: a[k],
+      unidad: `${k.split('_')[1]}/L`,
+      evento: true,
+      numero: a.aplicacion_numero ?? null,
+      total: delCicloEntero.filter((x) => x?.producto === a.producto).length,
+      aplicadoEl: primerCompleto,
+    });
+  }
+  return salida;
 }
 
 /**
@@ -387,9 +598,13 @@ export function totalMezcla(cultivo, fase) {
  * cultivo.json pide `productos_aplicados` en cada registro; se deduce de la
  * fase en vez de hacerte tildarlos uno por uno.
  */
-export function productosDeLaFase(cultivo, fase, tipo) {
+export function productosDeLaFase(cultivo, fase, tipo, riegos = []) {
   const { dosis } = recetaDe(cultivo, fase, tipo);
-  return dosis.map((d) => infoProducto(cultivo, d.clave)?.id).filter(Boolean);
+  // El evento entra solo si este completo es el primero de la fase.
+  const eventos = tipo === 'completo'
+    ? eventosDeLaFase(cultivo, fase, riegos).filter((e) => !e.aplicadoEl)
+    : [];
+  return [...dosis, ...eventos].map((d) => infoProducto(cultivo, d.clave)?.id).filter(Boolean);
 }
 
 /**
@@ -401,7 +616,10 @@ export function productosDeLaFase(cultivo, fase, tipo) {
  * posibles porque el nombre exacto lo define Cowork, no esta app.
  */
 export function secadosConsolidados(cultivo) {
-  const c = cultivo?.ciclo_activo?.secados_medidos ?? cultivo?.secados_medidos;
+  const c =
+    cicloDe(cultivo)?.secados_medidos ??
+    grupoActivo(cultivo)?.secados_medidos ??
+    cultivo?.secados_medidos;
   return Array.isArray(c) ? c : [];
 }
 
@@ -418,10 +636,12 @@ export function secadosConsolidados(cultivo) {
  * alcance a una regla agronómica no es tarea de una interfaz.
  */
 export function tipoSugerido(cultivo, riegos = [], fase = null, hoy = hoyISO()) {
-  const prox = (cultivo?.ciclo_activo?.riegos_programados || []).find((r) => r.fecha >= hoy);
+  const prox = (cicloDe(cultivo)?.riegos_programados || []).find((r) => r.fecha >= hoy);
   const delPlan = prox?.tipo || 'completo';
+  // Con subconjuntos, el próximo riego del plan puede ser solo para uno.
+  const alcance = prox?.alcance && prox.alcance !== 'todos' ? prox.alcance : null;
 
-  if (delPlan !== 'completo') return { tipo: delPlan, motivo: 'plan', aviso: null };
+  if (delPlan !== 'completo') return { tipo: delPlan, motivo: 'plan', aviso: null, alcance };
 
   const ultimoCompleto = riegos
     .filter((r) => r?.tipo === 'completo' && r.fecha)
@@ -431,7 +651,7 @@ export function tipoSugerido(cultivo, riegos = [], fase = null, hoy = hoyISO()) 
 
   const transcurridos = ultimoCompleto ? dias(ultimoCompleto, hoy) : null;
   if (transcurridos == null || transcurridos >= 7 || transcurridos < 0) {
-    return { tipo: delPlan, motivo: 'plan', aviso: null };
+    return { tipo: delPlan, motivo: 'plan', aviso: null, alcance };
   }
 
   const enFloracion = fase?.tipo === 'floracion';
@@ -441,5 +661,5 @@ export function tipoSugerido(cultivo, riegos = [], fase = null, hoy = hoyISO()) 
       ? 'La regla r11 no admite un segundo completo en la misma semana de floración.'
       : 'La regla r11 pide un solo completo por semana en floración activa; en vegetativo no la fija el archivo.');
 
-  return { tipo: enFloracion ? 'intermedio' : delPlan, motivo: 'r11', aviso: texto };
+  return { tipo: enFloracion ? 'intermedio' : delPlan, motivo: 'r11', aviso: texto, alcance };
 }

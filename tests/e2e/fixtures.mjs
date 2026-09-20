@@ -45,26 +45,58 @@ export const ESTADO = {
   subsistemas: {
     cultivo: {
       activo: true,
+      ciclos_en_paralelo: true,
       archivo_datos: '/Asistente Nico/Cultivo/cultivo.json',
       drive_file_id: 'FIXTURE-CULTIVO',
+      // Dos ciclos a la vez, cada uno con su archivo. El primero es el
+      // canonico: guarda los bloques globales que el otro no copia.
+      archivos_por_grupo: [
+        { grupo: 'grupo-1', archivo: '/Asistente Nico/Cultivo/cultivo.json' },
+        { grupo: 'grupo-2', archivo: '/Asistente Nico/Cultivo/cultivo_grupo2.json' },
+      ],
+      nomenclatura_de_grupos: {
+        'grupo-1': '8 plantas bajo SilverFox.',
+        'grupo-2': '11 plantas bajo DHP: 3 veteranas y 8 nuevas.',
+        'grupo-3': '3 plantas que quedan en carpa para el ciclo siguiente.',
+      },
       registro: { archivo_entrada_app: '/Asistente Nico/Cultivo/riegos_registrados.json' },
-      resumen: {
-        ciclo_activo: 'Ciclo de prueba',
-        fase_actual: 'V1',
-        dia_de_ciclo: 13,
-        ultimo_riego: null,
-        proximo_hito: 'Flip a 12/12',
-        // Ocho: la pantalla Hoy muestra tres y enlaza al resto.
-        alertas: [
-          'Riego proyectado: primer fertirriego tras doce dias de solo agua',
-          'Spinosad sin comprar, limite en dos semanas',
-          'Pasar los tres ex-esquejes a la carpa',
-          'Red sin instalar, requisito para flipear',
-          'Decision pendiente: salida de Rhino Skin en S6 o S7',
-          'Revisar hermetismo de la sala antes del cambio de fotoperiodo',
-          'Calibrar el medidor de pH: el ciclo pasado tuvo un desvio de 0.20 unidades en zona acida y eso arruino dos semanas de lecturas',
-          'Trampas cromaticas azules sin reponer desde el ciclo anterior',
-        ],
+      grupos: {
+        'grupo-1': {
+          drive_file_id: 'FIXTURE-CULTIVO',
+          resumen: {
+            ciclo_activo: 'Ciclo de prueba',
+            fase_actual: 'V1',
+            dia_de_ciclo: 13,
+            ultimo_riego: null,
+            proximo_hito: 'Flip a 12/12',
+            // Ocho: la pantalla Hoy muestra tres y enlaza al resto.
+            alertas: [
+              'Riego proyectado: primer fertirriego tras doce dias de solo agua',
+              'Spinosad sin comprar, limite en dos semanas',
+              'Pasar los tres ex-esquejes a la carpa',
+              'Red sin instalar, requisito para flipear',
+              'Decision pendiente: salida de Rhino Skin en S6 o S7',
+              'Revisar hermetismo de la sala antes del cambio de fotoperiodo',
+              'Calibrar el medidor de pH: el ciclo pasado tuvo un desvio de 0.20 unidades en zona acida y eso arruino dos semanas de lecturas',
+              'Trampas cromaticas azules sin reponer desde el ciclo anterior',
+            ],
+          },
+        },
+        'grupo-2': {
+          drive_file_id: 'FIXTURE-CULTIVO2',
+          resumen: {
+            ciclo_activo: 'Ciclo de prueba - Grupo 2 DHP',
+            fase_actual: 'S1',
+            dia_de_ciclo: 3,
+            ultimo_riego: null,
+            proximo_hito: 'Instalacion de la red despues del stretch',
+            alertas: ['Amarillamiento en una veterana, a vigilar'],
+          },
+        },
+      },
+      hallazgos_de_auditoria_abiertos: {
+        nota: 'Regresiones que reaparecen al regenerar el archivo desde bases viejas.',
+        items: ['La fase de oscuridad y corte volvio a desaparecer de cultivo.json'],
       },
     },
     academico: {
@@ -111,8 +143,9 @@ export const CULTIVO = {
     agua: { ec_ms_cm: 0.225, ph_origen: 7.0, nota_critica: 'El agua APORTA 0.225 mS/cm antes de agregar nada.' },
   },
   luminarias: [
-    { id: 'silverfox', nombre: 'SilverFox 480 EVO', espacio: 'sala-flor', asignada_a: 'grupo-1' },
-    { id: 'generico', nombre: 'LED generico', espacio: 'carpa-veg', asignada_a: 'grupo-2' },
+    { id: 'silverfox', nombre: 'SilverFox 480 EVO', espacio: 'sala-flor', ppfd_pico: 800, asignada_a: 'grupo-1' },
+    { id: 'dhp', nombre: 'DHP 2+R DydeLED', espacio: 'sala-flor', ppfd_pico: 1400, asignada_a: null },
+    { id: 'generico', nombre: 'LED generico', espacio: 'carpa-veg', ppfd_pico: 200, asignada_a: 'grupo-2' },
   ],
   grupos: [
     {
@@ -149,18 +182,26 @@ export const CULTIVO = {
       {
         id: 'S5', nombre: 'Floracion S5 pico de PK inicio', tipo: 'floracion', dias_flor: [29, 35],
         fecha_inicio: dia(3), fecha_fin: dia(9),
-        // Ocho dosis: la fase mas cargada del ciclo, para ver si la lista aguanta.
+        // Siete dosis continuas: la fase mas cargada del ciclo, para ver si la
+        // lista aguanta. Flora Booster NO va aca: es aplicacion de evento (r14).
         nutricion: {
-          rhino_skin_ml_l: 2, calmag_ml_l: 3, hybrids_g_l: 1.0, flora_booster_ml_l: 4,
-          flora_booster_aplicacion: 3, trico_mas_g_l: 0.5, pure_zym_ml_l: 1, vitamax_ml_l: 0.5,
+          rhino_skin_ml_l: 2, calmag_ml_l: 3, hybrids_g_l: 1.0, pk_booster_g_l: 0.3,
+          trico_mas_g_l: 0.5, pure_zym_ml_l: 1, vitamax_ml_l: 0.5,
         },
         ec_objetivo: [1.7, 2.0], ph_entrada: [6.2, 6.4], volumen_por_maceta_l: [4, 4],
-        ppfd: 1150, ppfd_techo: 1200,
+        ppfd: 700, ppfd_techo: 800,
+        aplicaciones_evento: [
+          {
+            producto: 'flora_booster', aplicacion_numero: 3, dosis_ml_l: 4,
+            cuando: 'UNA sola vez en la fase, en el PRIMER fertirriego completo de la fase.',
+            regla: 'NO se repite si hay mas de un fertirriego en la fase.',
+          },
+        ],
         ambiente: { temp_luz_c: [22, 24], temp_oscuridad_c: [17, 20], hr_pct: [42, 48], diferencial_c: [6, 8] },
         // Contradiccion deliberada: la fase dice 1150 y la accion 1200. Es la
         // regresion real que volvio en la v1.7.0, puesta aca para que la
         // seccion de auditoria tenga algo que mostrar.
-        acciones: ['Hybrids llega a 1 g/L: techo absoluto, SOLO esta semana', 'Subir a 1200 PPFD solo si el sustrato seca en 24-36h'],
+        acciones: ['Hybrids llega a 1 g/L: techo absoluto, SOLO esta semana', 'Subir a 800 PPFD solo si el sustrato seca en 24-36h'],
         nutricion_intermedio: { ...NUTRICION_INTERMEDIO, trico_mas_g_l: 0.5 },
         nutricion_intermedio_nota: NOTA_INTERMEDIO,
         ec_objetivo_intermedio: null, ph_entrada_intermedio: [6.2, 6.4],
@@ -231,6 +272,146 @@ export const CULTIVO = {
   registro_crudo: {
     esquema: { id: 'string', fecha: 'YYYY-MM-DD', tipo: 'completo | intermedio | agua | ripening | flush' },
   },
+  modelo_de_nutricion: {
+    continua: { donde: 'fase.nutricion', regla: 'Van en CADA fertirriego completo.' },
+    evento: { productos: ['flora_booster'], donde: 'fase.aplicaciones_evento', regla: 'Una sola vez por fase.' },
+  },
+};
+
+/**
+ * El segundo ciclo, en el esquema nuevo: array `ciclos` con puntero, y sin
+ * copiar ni un bloque global. Todo lo que no esta aca sale de CULTIVO.
+ *
+ * Es el caso que mas estresa la pantalla: dos subconjuntos con cadencias
+ * distintas, volumen por subconjunto, techo de PPFD por subconjunto y un
+ * secado que todavia nadie midio.
+ */
+export const CULTIVO_G2 = {
+  _meta: { version: '1.1.0', actualizado: dia(0) },
+  referencias: {
+    archivo_canonico: '/Asistente Nico/Cultivo/cultivo.json',
+    bloques_no_copiados: [
+      'sitio', 'productos', 'orden_de_mezcla', 'tipos_de_riego', 'modelo_de_nutricion',
+      'reglas_no_negociables', 'registro_crudo', 'pendientes',
+    ],
+  },
+  luminarias_correcciones: {
+    nota: 'Override local mientras el canonico no incorpore la correccion.',
+    dhp: { id: 'dhp', nombre: 'DHP 2+R DydeLED', ppfd_pico: 1400, asignada_a: 'grupo-2' },
+  },
+  grupos: [
+    {
+      id: 'grupo-2',
+      nombre: 'Grupo 2 DHP - lote heterogeneo de 11',
+      cantidad_plantas: 11,
+      maceta: { tipo: 'air pot', litros_nominal: 25, litros_efectivos: 15 },
+      luminaria: 'dhp',
+      fecha_trasplante: dia(-21),
+      ciclo_secado_horas: null,
+      _ciclo_secado_horas_nota: 'Sin medir para este grupo. NO heredar las 60 h del grupo-1.',
+      metodo_de_riego: 'Por vueltas de 250 ml por planta hasta alcanzar drenaje.',
+      subconjuntos: [
+        { id: 'A', nombre: 'Veteranas', cantidad_plantas: 3, regimen_riego_acelerado: true },
+        { id: 'B', nombre: 'Nuevas', cantidad_plantas: 8, regimen_riego_acelerado: false },
+      ],
+      secados_medidos: [],
+    },
+  ],
+  ciclos: [
+    {
+      id: 'ciclo-prueba-g2',
+      nombre: 'Ciclo de prueba - Grupo 2 DHP',
+      grupo: 'grupo-2',
+      fecha_inicio: dia(-21),
+      fecha_flip_planificada: dia(-2),
+      fecha_flip_real: dia(-2),
+      duracion_floracion_semanas: 8,
+      fecha_corte_estimada: dia(60),
+      fecha_corte_criterio: 'La define la lupa 60x. NUNCA el calendario.',
+      excepciones_a_reglas: [
+        {
+          regla: 'r1', alcance: 'subconjunto-A', fases: ['S1'], limite_ppfd: 700,
+          fundamento: 'r1 protege raiz inmadura, no un numero. Las veteranas llegan con tres semanas de colonizacion.',
+          contrapartida: 'El subconjunto B mantiene el techo de 500 DURO.',
+          estado: 'vigente',
+        },
+      ],
+      fases: [
+        {
+          id: 'V-PRE', nombre: 'Veg pre-flip', tipo: 'vegetativo',
+          fecha_inicio: dia(-6), fecha_fin: dia(-3),
+          nutricion: { rhino_skin_ml_l: 2, calmag_ml_l: 2, hybrids_g_l: 0.5, grow_g_l: 0.8, pure_zym_ml_l: 1, vitamax_ml_l: 0.5 },
+          ec_objetivo: [1.0, 1.3], ph_entrada: [6.0, 6.2], drenaje_objetivo_pct: [10, 20],
+          volumen_por_maceta_l: { A: [2.5, 3], B: [1.5, 2], nota: 'Referencia de arranque, el criterio es el drenaje.' },
+          ppfd: 400, ppfd_techo: 500,
+          ambiente: { temp_luz_c: [23, 26], temp_oscuridad_c: [18, 22], hr_pct: [60, 70], diferencial_c: null },
+          nutricion_intermedio: NUTRICION_INTERMEDIO,
+          nutricion_intermedio_nota: NOTA_INTERMEDIO,
+          ec_objetivo_intermedio: null, ph_entrada_intermedio: [6.0, 6.2],
+        },
+        {
+          id: 'S1', nombre: 'Floracion S1 stretch inicio', tipo: 'floracion', dias_flor: [1, 7],
+          fecha_inicio: dia(-2), fecha_fin: dia(4),
+          nutricion: { rhino_skin_ml_l: 2, calmag_ml_l: 2, hybrids_g_l: 0.5, trico_mas_g_l: 0.5, pure_zym_ml_l: 1, vitamax_ml_l: 0.5 },
+          ec_objetivo: [1.4, 1.6], ph_entrada: [6.2, 6.4], drenaje_objetivo_pct: [10, 20],
+          volumen_por_maceta_l: { A: [2.5, 3], B: [1.5, 2], nota: 'Referencia de arranque, el criterio es el drenaje.' },
+          ppfd: 500, ppfd_techo: 500,
+          ppfd_por_subconjunto: {
+            A: { ppfd: 700, ppfd_techo: 700, origen: 'excepcion vigente a r1' },
+            B: { ppfd: 500, ppfd_techo: 500, origen: 'r1' },
+          },
+          ppfd_nota: 'Los campos escalares son el valor del grupo. El detalle por subconjunto manda cuando existe.',
+          ambiente: { temp_luz_c: [22, 24], temp_oscuridad_c: [17, 20], hr_pct: [42, 48], diferencial_c: [6, 8] },
+          acciones: [
+            'Disposicion etapa 1: zona de gradiente, con el subconjunto B a techo 500 duro',
+            'Verificar los platos de contencion bajo las 11 macetas',
+          ],
+          aplicaciones_evento: [
+            {
+              producto: 'flora_booster', aplicacion_numero: 1, dosis_ml_l: 2,
+              cuando: 'UNA sola vez en la fase, en el PRIMER fertirriego completo de la fase.',
+              regla: 'NO se repite si hay mas de un fertirriego en la fase.',
+            },
+          ],
+          nutricion_intermedio: { ...NUTRICION_INTERMEDIO, trico_mas_g_l: 0.5 },
+          nutricion_intermedio_nota: NOTA_INTERMEDIO,
+          ec_objetivo_intermedio: null, ph_entrada_intermedio: [6.2, 6.4],
+          ambiente_nota: 'La sala sirve a dos ciclos: hasta el corte del grupo 1 el ambiente lo gobierna el otro grupo.',
+        },
+      ],
+      riegos_programados: [
+        { fecha: dia(-2), tipo: 'completo', fase: 'S1', alcance: 'todos' },
+        { fecha: dia(1), tipo: 'intermedio', fase: 'S1', alcance: 'todos' },
+        { fecha: dia(3), tipo: 'agua', fase: 'S1', alcance: 'A' },
+      ],
+      riegos_ejecutados: [],
+      hitos: [
+        { fecha: dia(5), tipo: 'manejo', descripcion: 'Ventana de instalacion de la red, despues del stretch', estado: 'pendiente' },
+      ],
+      observaciones: [
+        {
+          fecha: dia(0),
+          observacion: 'Amarillamiento franco en dos o tres hojas del tercio medio-alto de una de las veteranas, con peciolos violaceos.',
+          estado: 'a vigilar',
+        },
+      ],
+      sanidad: {
+        trips: {
+          estado: 'par foliar completo',
+          plan: [{ fecha: dia(-2), producto: 'Mamboreta Oil 85E 5 ml/L + Green Leaf', via: 'foliar', nota: 'Segunda del par, ANTES de entrar a sala.' }],
+          cierre_ventana_foliar: dia(12),
+          despues_del_cierre: 'Solo control fisico: diatomeas y trampas azules.',
+        },
+      },
+    },
+  ],
+  ciclo_activo_id: 'ciclo-prueba-g2',
+  decisiones_abiertas: [
+    { id: 'g2-d1', tema: 'Techo de PPFD en S5-S6', estado: 'PENDIENTE DE NICO', decidir_antes_de: dia(30) },
+  ],
+  datos_estimados: [
+    { dato: 'PPFD de campo del DHP sobre 150x150 con 11 plantas', valor: 'sin medir', estado: 'ESTIMADO. 1400 es pico central declarado.' },
+  ],
 };
 
 export const EVENTOS = {

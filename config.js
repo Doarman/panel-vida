@@ -23,12 +23,15 @@ export const CONFIG = {
   ESTADO_FILE_ID: '1gpUSFVPYXZL88QPjKedS27IHW9AsvFI3',
 
 
-  // PUENTE, no destino. El sustrato de este cultivo seca en unas 60 horas y el
-  // archivo todavía lo trae en días enteros, donde 2.5 días no se puede decir.
-  // Se usa solo mientras cultivo.json no declare `ciclo_secado_horas` en el
-  // grupo: apenas lo declare, manda el archivo. Y cualquier medición de Nico
-  // le gana a los dos.
-  SECADO_HORAS: 60,
+  // PUENTE, no destino, y solo para el grupo 1. Su sustrato seca en unas 60
+  // horas; cultivo.json ya lo declara en `ciclo_secado_horas` y el archivo
+  // manda. Esto queda por si una regeneración del archivo lo vuelve a perder.
+  // Cualquier medición de Nico le gana a los dos.
+  //
+  // Es por grupo a propósito: el secado nunca se hereda de un grupo a otro
+  // (distinta maceta, porte y luz). Un grupo sin entrada acá y sin dato en su
+  // archivo no proyecta: muestra cuánto pasó desde el riego y nada más.
+  SECADO_HORAS: { 'grupo-1': 60 },
 
   CALENDAR_ID: 'primary',
   TZ: 'America/Argentina/Cordoba',

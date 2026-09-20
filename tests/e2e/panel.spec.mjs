@@ -12,9 +12,13 @@
 // servir los fixtures. Así se ejercita el mismo código que corre en el celular.
 
 import { test, expect } from '@playwright/test';
-import { ESTADO, CULTIVO, EVENTOS, CORREO_IDS, mensaje } from './fixtures.mjs';
+import { ESTADO, CULTIVO, CULTIVO_G2, EVENTOS, CORREO_IDS, mensaje } from './fixtures.mjs';
 
-const sinGrupo2 = { ...CULTIVO, grupos: [CULTIVO.grupos[0]] };
+// El ecosistema como era antes del segundo ciclo: un solo archivo de cultivo.
+const UN_SOLO_GRUPO = structuredClone(ESTADO);
+delete UN_SOLO_GRUPO.subsistemas.cultivo.archivos_por_grupo;
+delete UN_SOLO_GRUPO.subsistemas.cultivo.grupos;
+UN_SOLO_GRUPO.subsistemas.cultivo.resumen = ESTADO.subsistemas.cultivo.grupos['grupo-1'].resumen;
 
 const json = (datos) => ({
   status: 200,
@@ -22,7 +26,12 @@ const json = (datos) => ({
   body: JSON.stringify(datos),
 });
 
-async function prepararGoogle(page, { riegos = [], secados = [] } = {}) {
+/**
+ * Devuelve el archivo que escribe la app, para poder mirar lo que subió: los
+ * campos nuevos (ciclo, alcance, drenaje) no se ven en pantalla y son
+ * justamente los que permiten rutear cada registro a su grupo.
+ */
+async function prepararGoogle(page, { riegos = [], secados = [], estado = ESTADO } = {}) {
   // El archivo que escribe la app se simula con estado: lo que la app sube
   // queda guardado y se devuelve en la lectura siguiente. Sin eso no se puede
   // probar el ciclo completo de anotar, subir y releer.
@@ -62,11 +71,13 @@ async function prepararGoogle(page, { riegos = [], secados = [] } = {}) {
     if (u.pathname === '/drive/v3/files') {
       const q = u.searchParams.get('q') || '';
       const id = q.includes('estado.json') ? 'FIXTURE-ESTADO'
+        : q.includes('cultivo_grupo2.json') ? 'FIXTURE-CULTIVO2'
         : q.includes('cultivo.json') ? 'FIXTURE-CULTIVO'
         : 'FIXTURE-RIEGOS';
       return ruta.fulfill(json({ files: [{ id, name: 'x' }] }));
     }
-    if (u.pathname.includes('FIXTURE-ESTADO')) return ruta.fulfill(json(ESTADO));
+    if (u.pathname.includes('FIXTURE-ESTADO')) return ruta.fulfill(json(estado));
+    if (u.pathname.includes('FIXTURE-CULTIVO2')) return ruta.fulfill(json(CULTIVO_G2));
     if (u.pathname.includes('FIXTURE-CULTIVO')) return ruta.fulfill(json(CULTIVO));
     if (u.pathname.includes('FIXTURE-RIEGOS')) return ruta.fulfill(json(archivo));
 
@@ -80,14 +91,20 @@ async function prepararGoogle(page, { riegos = [], secados = [] } = {}) {
       JSON.stringify({ access_token: 'prueba', expira_en: Date.now() + 3600e3 })
     );
   });
+
+  return archivo;
 }
 
-async function ir(page, ruta = 'hoy', modo = 'dia', archivo = {}) {
-  await prepararGoogle(page, archivo);
+async function ir(page, ruta = 'hoy', modo = 'dia', opciones = {}) {
+  const archivo = await prepararGoogle(page, opciones);
   await page.addInitScript((m) => localStorage.setItem('pv.modo', m), modo);
+  if (opciones.grupo) {
+    await page.addInitScript((g) => localStorage.setItem('pv.grupo', g), opciones.grupo);
+  }
   await page.goto(`/#/${ruta}`);
   await page.waitForFunction(() => !document.querySelector('.cargando'));
   await page.waitForTimeout(250); // que terminen las transiciones
+  return archivo;
 }
 
 /** Nada puede desbordar horizontalmente: la pantalla no scrollea de costado. */
@@ -251,6 +268,11 @@ test('ninguna pantalla habla en imperativo', async ({ page }) => {
   }
 });
 
+test('las contradicciones que dejo anotadas Cowork tambien se ven', async ({ page }) => {
+  await ir(page, 'plan');
+  await expect(page.locator('.mirada-t', { hasText: 'oscuridad y corte' })).toBeVisible();
+});
+
 test('el contador del sustrato cuenta en horas', async ({ page }) => {
   // Este sustrato seca en unas 60 horas: dos dias y medio. En un contador de
   // dias enteros ese numero no se puede decir, y por eso el anterior nunca
@@ -270,21 +292,139 @@ test('el contador del sustrato cuenta en horas', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Ya se secó' })).toBeVisible();
 });
 
-test('con un solo grupo la pantalla no se rompe ni muestra la seccion Grupos', async ({ page }) => {
-  // El grupo 2 salio del archivo para modelarse aparte. Que desaparezca una
-  // seccion no puede dejar huecos ni romper lo que depende del grupo.
-  await prepararGoogle(page);
-  await page.route('https://www.googleapis.com/drive/v3/files/FIXTURE-CULTIVO*', (r) =>
-    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sinGrupo2) })
-  );
-  await page.goto('/#/cultivo');
-  await page.waitForFunction(() => !document.querySelector('.cargando'));
-  await page.waitForTimeout(250);
+test('con un solo grupo no aparece el selector y la pantalla no cambia', async ({ page }) => {
+  // Antes del segundo ciclo, estado.json no declaraba archivos_por_grupo. Ese
+  // estado tiene que seguir funcionando igual: nada de pestañas para un grupo.
+  await ir(page, 'cultivo', 'dia', { estado: UN_SOLO_GRUPO });
 
-  await expect(page.locator('.titulo', { hasText: 'Grupos' })).toHaveCount(0);
+  await expect(page.locator('.grupos-sel')).toHaveCount(0);
   await expect(page.locator('.litros-ref')).toContainText('8 macetas');
   await sinDesborde(page);
   await navNoTapa(page);
+});
+
+// ---------- dos ciclos en paralelo ----------
+
+test('los dos grupos se eligen por pestaña y no se mezclan', async ({ page }, info) => {
+  await ir(page, 'cultivo');
+
+  const pestanas = page.locator('.grupo-b');
+  await expect(pestanas).toHaveCount(2);
+  await expect(pestanas.first()).toHaveClass(/activo/);
+  await expect(pestanas.first()).toContainText('Grupo 1');
+  // Debajo del nombre, en qué está cada uno: la fase y el panel.
+  await expect(pestanas.first()).toContainText('V1');
+  await expect(pestanas.nth(1)).toContainText('DHP');
+
+  // El grupo 1: ocho macetas, un solo contador.
+  await expect(page.locator('.litros-ref')).toContainText('8 macetas');
+  await expect(page.locator('.estado-col')).toHaveCount(0);
+
+  await pestanas.nth(1).click();
+  await page.waitForFunction(() => document.querySelectorAll('.estado-col').length > 0);
+
+  // El grupo 2: dos subconjuntos, cada uno con su volumen y su contador.
+  await expect(page.locator('.grupo-b.activo')).toContainText('Grupo 2');
+  await expect(page.locator('.contexto')).toContainText('día 3 de flor');
+  await expect(page.locator('.litros-ref')).toContainText('3 × 2.5–3 L + 8 × 1.5–2 L');
+  await expect(page.locator('.estado-col')).toHaveCount(2);
+  await expect(page.locator('.estado-col').first()).toContainText('Veteranas');
+  await expect(page.locator('.estado-col').nth(1)).toContainText('Nuevas');
+
+  await sinDesborde(page);
+  await navNoTapa(page);
+  await page.screenshot({
+    path: `tests/e2e/capturas/${info.project.name}-cultivo-grupo2.png`,
+    fullPage: true,
+  });
+});
+
+test('la eleccion de grupo se mantiene entre Cultivo y el plan', async ({ page }) => {
+  await ir(page, 'cultivo', 'dia', { grupo: 'grupo-2' });
+  await expect(page.locator('.grupo-b.activo')).toContainText('Grupo 2');
+
+  await page.locator('.boton-enlace').first().click();
+  await page.waitForFunction(() => location.hash === '#/plan');
+  await page.waitForFunction(() => !document.querySelector('.cargando'));
+
+  await expect(page.locator('.grupo-b.activo')).toContainText('Grupo 2');
+  await expect(page.locator('.ciclo-f')).toContainText('Grupo 2');
+  // El plan del grupo 2 muestra el PPFD de cada subconjunto y el drenaje.
+  await expect(page.locator('.fase.actual .fase-d')).toContainText('Veteranas 700 / Nuevas 500');
+  await expect(page.locator('.fase.actual .fase-d')).toContainText('drenaje 10–20 %');
+});
+
+test('el grupo 2 no hereda el secado del grupo 1', async ({ page }) => {
+  // Distinta maceta, distinto porte y distinta luz: 60 horas del grupo 1 no
+  // dicen nada del grupo 2. Sin medicion propia, se cuenta lo transcurrido y
+  // no se proyecta nada.
+  const hace = (n) => {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return d.toISOString().slice(0, 10);
+  };
+  const riegos = [
+    { id: 'r-g1', fecha: hace(2), fase: 'V1', tipo: 'completo' },
+    { id: 'r-g2', fecha: hace(2), fase: 'S1', tipo: 'completo', ciclo: 'ciclo-prueba-g2', alcance: 'todos' },
+  ];
+
+  await ir(page, 'cultivo', 'dia', { riegos, grupo: 'grupo-2' });
+
+  const col = page.locator('.estado-col').first();
+  await expect(col).toContainText('Desde el último riego');
+  await expect(col).toContainText('Secado todavía sin medir');
+  await expect(col.locator('.barra')).toHaveCount(0);
+  await expect(page.locator('.estado-col .btn')).toHaveCount(2);
+
+  // El grupo 1, con su dato, sí proyecta.
+  await page.locator('.grupo-b').first().click();
+  await page.waitForFunction(() => document.querySelectorAll('.estado-col').length === 0);
+  await expect(page.locator('.estado-s')).toContainText('seca en ~');
+});
+
+test('el registro sale con ciclo, alcance y drenaje', async ({ page }) => {
+  // Son los tres campos que pidió el contrato nuevo: sin ellos no se puede
+  // rutear el registro a su archivo ni auditar el riego sin drenaje.
+  const archivo = await ir(page, 'cultivo', 'dia', { grupo: 'grupo-2' });
+
+  await page.locator('.registro-d > summary').click();
+  await page.selectOption('#r-alcance', 'A');
+  await page.selectOption('#r-drenaje', 'si');
+  await page.fill('#r-ec', '1.5');
+  await page.getByRole('button', { name: 'Registrar', exact: true }).click();
+
+  // Se espera a que suba, no a un cartel: al registrar, la pantalla se
+  // redibuja con el contador reiniciado y el aviso se va con ella.
+  await expect.poll(() => archivo.riegos.length, { timeout: 5000 }).toBe(1);
+
+  const r = archivo.riegos.at(-1);
+  expect(r.ciclo, 'el ciclo al que pertenece').toBe('ciclo-prueba-g2');
+  expect(r.alcance, 'a qué subconjunto se regó').toBe('A');
+  expect(r.drenaje, 'si llegó a drenar').toBe('si');
+  expect(r.fase).toBe('S1');
+  expect(r.ec_medida).toBe(1.5);
+  expect(r.productos_aplicados, 'la aplicación de evento entra en el primer completo')
+    .toContain('flora_booster');
+});
+
+test('Flora Booster se muestra como aplicacion de la fase, no como una dosis mas', async ({ page }) => {
+  // r14: con secado de 60 horas hay dos o tres fertirriegos por fase. Si se
+  // leyera como concentración, las cuatro aplicaciones del ciclo serían ocho.
+  await ir(page, 'cultivo', 'dia', { grupo: 'grupo-2' });
+
+  await page.getByRole('button', { name: 'completo', exact: true }).click();
+  await expect(page.locator('.seg-b.activo')).toHaveText('completo');
+
+  const evento = page.locator('.mezcla li.evento');
+  await expect(evento).toHaveCount(1);
+  await expect(evento.locator('.mz-n')).toHaveText('Flora Booster');
+  await expect(evento.locator('.mz-ev')).toContainText('aplicación 1 de 1');
+  await expect(evento.locator('.mz-ev')).toContainText('primer completo de la fase');
+});
+
+test('el riego se mide por drenaje y no por litros (r17)', async ({ page }) => {
+  await ir(page, 'cultivo', 'dia', { grupo: 'grupo-2' });
+  await expect(page.locator('.mezcla-drenaje')).toContainText('Hasta drenar 10–20 %');
 });
 
 test('las contradicciones del archivo se ven en el plan', async ({ page }) => {
@@ -301,7 +441,7 @@ test('cultivo muestra cuatro cosas, no doce', async ({ page }) => {
   // dias es una sola pregunta; el resto es consulta y vive en el plan.
   await ir(page, 'cultivo');
   const visibles = await page.locator('#main > *').count();
-  expect(visibles, 'secciones en Cultivo').toBeLessThanOrEqual(8);
+  expect(visibles, 'secciones en Cultivo').toBeLessThanOrEqual(9);
   await expect(page.locator('.estado-n')).toBeVisible();
   await expect(page.locator('.titulo', { hasText: 'Requiere tu mirada' })).toHaveCount(0);
 });

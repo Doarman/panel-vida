@@ -6,21 +6,24 @@
 //
 // Las dosis sí van completas y al frente: son el dato que se usa parado frente
 // a la mezcla, y no saberlas de memoria no es una decisión, es una molestia.
+//
+// Con dos ciclos en paralelo, cada grupo se mira por separado: su contador, su
+// mezcla y sus registros. Nada de un grupo se le presta al otro.
 
 import { CONFIG } from '../../config.js';
-import { leerEstado, leerArchivoDeSubsistema } from '../api.js';
+import { leerEstado } from '../api.js';
 import { subsistema } from '../contract.js';
 import { registrar, registrarSecado, sincronizar, pendientes, subidos, usarArchivo } from '../riegos.js';
-import { el, seccion, cargando, error, itemOmitible, pieOmitidos } from '../ui.js';
+import { el, seccion, cargando, error } from '../ui.js';
 import { conCache, antiguedad } from '../cache.js';
-import { estaOmitido, omitir, restaurarTodo } from '../omitidos.js';
-import { auditarCultivo, hallazgosDeclarados } from '../auditoria.js';
+import { cargarGrupos, grupoElegido, selectorDeGrupos } from '../cultivo-grupos.js';
 import {
-  hoyISO, dias, fecha, cuando, rango,
+  hoyISO, fecha, rango,
   faseDe, diaDeCiclo, nombreDe, infoProducto,
-  dosisOrdenadas, totalMezcla, productosDeLaFase,
-  ordenDeLaFase, aguaBase, estadoDeSecado, fechaCorta, sumarDias,
+  totalMezcla, productosDeLaFase, posicionEnMezcla,
+  ordenDeLaFase, aguaBase, estadoDeSecado, fechaCorta,
   recetaDe, tiposDeRiego, tipoSugerido, secadosConsolidados,
+  delCiclo, delAlcance, subconjuntosDe, volumenTexto, eventosDeLaFase,
 } from '../cultivo-datos.js';
 
 // ---------- fichas de dato ----------
@@ -38,8 +41,6 @@ function chips(items) {
   }
   return cont;
 }
-
-
 
 function pintarAmbiente(fase) {
   const a = fase?.ambiente;
@@ -60,16 +61,17 @@ function pintarAmbiente(fase) {
 
 // ---------- mezcla ----------
 
-const LITROS_CLAVE = 'pv.litros';
-
 /** 44, 11.5, 0.5 — sin decimales de más. */
 function cantidad(valor) {
   const n = Math.round(valor * 10) / 10;
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-function pintarMezcla(cultivo, fase, tipo, aviso, alCambiarTipo) {
+const nombreDeAlcance = (subs, id) => subs.find((s) => s.id === id)?.nombre || id;
+
+function pintarMezcla(g, fase, tipo, sugerencia, riegos, alCambiarTipo) {
   if (!fase) return null;
+  const { cultivo } = g;
 
   const receta = recetaDe(cultivo, fase, tipo);
   const s = seccion('Mezcla');
@@ -91,37 +93,62 @@ function pintarMezcla(cultivo, fase, tipo, aviso, alCambiarTipo) {
 
   // El porqué de la sugerencia, cuando no es simplemente lo que dice el plan.
   // Se explica la regla y se deja la eleccion: la app no decide agronomia.
-  if (aviso) s.append(el('p', 'mezcla-aviso', aviso));
+  if (sugerencia.aviso) s.append(el('p', 'mezcla-aviso', sugerencia.aviso));
 
-  s.append(el('p', 'mezcla-fase', `Fase ${fase.id} · ${fase.nombre}`));
+  // Con subconjuntos, el riego del plan puede ser solo para uno de ellos.
+  const subs = subconjuntosDe(cultivo);
+  const para = sugerencia.alcance && tipo === sugerencia.tipo
+    ? ` · para ${nombreDeAlcance(subs, sugerencia.alcance)}`
+    : '';
+  s.append(el('p', 'mezcla-fase', `Fase ${fase.id} · ${fase.nombre}${para}`));
 
   if (!receta.declarado) {
     s.append(el('p', 'vacio', `cultivo.json no declara qué lleva un riego "${tipo}".`));
     return s;
   }
 
+  // r17: el criterio es el drenaje, no el volumen. Va antes que los litros
+  // para que se lea primero.
+  const drenaje = fase.drenaje_objetivo_pct;
+  const lineaDrenaje = Array.isArray(drenaje)
+    ? el('p', 'mezcla-drenaje', `Hasta drenar ${rango(drenaje)} %. Los litros son la referencia para preparar.`)
+    : null;
+
+  // Aplicaciones de evento (Flora Booster): una sola por fase, en el primer
+  // completo (r14). Si ya pasó, no se suma a la mezcla.
+  const eventos = tipo === 'completo' ? eventosDeLaFase(cultivo, fase, riegos) : [];
+  const eventosPendientes = eventos.filter((e) => !e.aplicadoEl);
+
   // Sin dosis: es agua, o una fórmula fija que no depende de la fase.
-  if (!receta.dosis.length) {
+  if (!receta.dosis.length && !eventosPendientes.length) {
     const caja = el('div', 'sin-dosis');
     caja.append(el('p', 'sin-dosis-t', receta.formulaFija || 'Solo agua, sin aditivos.'));
     if (receta.ph) caja.append(el('p', 'sin-dosis-p', `pH de entrada ${rango(receta.ph)}`));
     s.append(caja);
+    if (lineaDrenaje) s.append(lineaDrenaje);
     if (receta.nota) s.append(el('p', 'mezcla-nota', receta.nota));
     return s;
   }
 
-  const dosis = receta.dosis;
+  const dosis = [...receta.dosis, ...eventosPendientes].sort(
+    (a, b) => posicionEnMezcla(cultivo, a.clave) - posicionEnMezcla(cultivo, b.clave)
+  );
   const notas = receta.notas;
   const total = totalMezcla(cultivo, fase);
 
   // Punto de partida: lo que dan las macetas de esta fase. Pero el que manda es
-  // el litro que prepares vos, así que se puede mover.
-  const sugerido = total
-    ? Math.round(total.n * ((fase.volumen_por_maceta_l[0] + fase.volumen_por_maceta_l[1]) / 2) * 2) / 2
-    : 20;
+  // el litro que prepares vos, así que se puede mover. Se recuerda por grupo:
+  // las tandas de uno y otro no tienen nada que ver.
+  const sugerido = total ? Math.round(((total.min + total.max) / 2) * 2) / 2 : 20;
+  const claveLitros = g.legado ? 'pv.litros' : `pv.litros.${g.id}`;
 
-  const guardado = Number(localStorage.getItem(LITROS_CLAVE));
+  let guardado = 0;
+  try {
+    guardado = Number(localStorage.getItem(claveLitros));
+  } catch {}
   const inicial = guardado > 0 ? guardado : sugerido;
+
+  if (lineaDrenaje) s.append(lineaDrenaje);
 
   const control = el('div', 'litros');
   const salida = el('output', 'litros-v', `${cantidad(inicial)} L`);
@@ -137,9 +164,10 @@ function pintarMezcla(cultivo, fase, tipo, aviso, alCambiarTipo) {
   control.append(barra);
 
   if (total) {
-    control.append(
-      el('p', 'litros-ref', `${total.n} macetas × ${rango(total.vol)} L  →  ${total.litros}`)
-    );
+    const cuenta = total.partes.length === 1 && !total.partes[0].id
+      ? `${total.n} macetas × ${rango(total.vol)} L`
+      : total.partes.map((p) => `${p.n} × ${rango(p.vol)} L`).join(' + ');
+    control.append(el('p', 'litros-ref', `${cuenta}  →  ${total.litros}`));
   }
   s.append(control);
 
@@ -150,7 +178,7 @@ function pintarMezcla(cultivo, fase, tipo, aviso, alCambiarTipo) {
 
   for (const d of dosis) {
     const info = infoProducto(cultivo, d.clave);
-    const li = el('li');
+    const li = el('li', d.evento ? 'evento' : null);
 
     const cabecera = el('div', 'mz-h');
     const cant = el('span', 'mz-c');
@@ -158,6 +186,11 @@ function pintarMezcla(cultivo, fase, tipo, aviso, alCambiarTipo) {
     cabecera.append(cant);
     cabecera.append(el('span', 'mz-d', `${d.valor} ${d.unidad}`));
     li.append(cabecera);
+
+    if (d.evento) {
+      const cual = d.numero && d.total ? `aplicación ${d.numero} de ${d.total} · ` : '';
+      li.append(el('p', 'mz-ev', `${cual}solo en el primer completo de la fase`));
+    }
 
     const detalle = [info?.nombre, info?.rol && `Para: ${info.rol}`, info?.nota]
       .filter(Boolean)
@@ -186,11 +219,17 @@ function pintarMezcla(cultivo, fase, tipo, aviso, alCambiarTipo) {
   barra.addEventListener('input', recalcular);
   barra.addEventListener('change', () => {
     try {
-      localStorage.setItem(LITROS_CLAVE, barra.value);
+      localStorage.setItem(claveLitros, barra.value);
     } catch {}
   });
   recalcular();
 
+  for (const e of eventos.filter((x) => x.aplicadoEl)) {
+    s.append(
+      el('p', 'mezcla-nota',
+        `${nombreDe(e.clave)}${e.numero ? ` (aplicación ${e.numero})` : ''} ya entró en el completo del ${fechaCorta(e.aplicadoEl)}. No se repite en la fase (r14).`)
+    );
+  }
   for (const n of notas) s.append(el('p', 'mezcla-nota', n));
   if (receta.nota) s.append(el('p', 'mezcla-nota', receta.nota));
 
@@ -211,71 +250,114 @@ function pintarMezcla(cultivo, fase, tipo, aviso, alCambiarTipo) {
   return s;
 }
 
-// ---------- proyección ----------
+// ---------- el sustrato ----------
 
-/**
- * El riego, contado desde el último que registraste y no desde el calendario.
- *
- * Una fecha del plan dice cuándo estaba previsto regar. Eso no responde la
- * pregunta real, que es si el sustrato se secó. El ciclo de secado medido de
- * este grupo sí se acerca: dice cuántos días suele tardar. Con eso la app
- * puede decir en qué día vas y devolver la pregunta, que es todo lo que
- * legítimamente puede hacer (r8).
- */
-/** El control para anotar un secado, con los días editables y el ancla visible. */
-/**
- * El estado del sustrato, que es la única pregunta que se hace todos los días.
- *
- * Se cuenta en horas y no en días: este sustrato seca en unas 60, que son dos
- * días y medio. En un contador de días enteros ese número no se puede decir, y
- * por eso el anterior nunca coincidía con la maceta.
- */
-function pintarRiego(cultivo, ultimoRiego, secados, faseId, alAnotar) {
-  const sec = estadoDeSecado(cultivo, ultimoRiego, {
-    secados,
-    faseId,
-    puente: CONFIG.SECADO_HORAS,
-  });
+/** Número grande, bajada y relleno de la barra para un estado de secado. */
+function lecturaDeSecado(sec) {
+  if (!sec) return { k: 'Sin riegos', n: '—', s: 'El contador arranca con el primero que registres.', pct: null };
 
-  const s = el('section', 'estado tarjeta');
-
-  if (!sec) {
-    s.append(el('p', 'estado-n', 'Sin riegos'));
-    s.append(el('p', 'estado-s', 'El contador arranca con el primero que registres.'));
-    return s;
+  // Grupo sin secado medido: no se proyecta con las horas de otro. El número
+  // grande pasa a ser lo transcurrido, que es lo único que se sabe.
+  if (sec.horas == null) {
+    return {
+      k: 'Regado hace',
+      n: `${sec.transcurridas} h`,
+      s: 'Desde el último riego. Secado todavía sin medir en este grupo.',
+      pct: null,
+    };
   }
 
   const h = Math.abs(sec.restantes);
-  const grande = sec.seco ? 'Pide agua' : h < 1 ? 'Ahora' : `${h} h`;
+  return {
+    k: sec.seco ? 'Secado' : 'Próximo riego',
+    n: sec.seco ? 'Pide agua' : h < 1 ? 'Ahora' : `${h} h`,
+    urge: sec.seco,
+    s: `Regado hace ${sec.transcurridas} h · seca en ~${sec.horas} h`,
+    pct: sec.pct,
+  };
+}
 
-  s.append(el('p', 'estado-k', sec.seco ? 'Secado' : 'Próximo riego'));
-  s.append(el('p', `estado-n${sec.seco ? ' urge' : ''}`, grande));
-
+function barraDeSecado(pct) {
   const barra = el('div', 'barra');
   const relleno = el('i');
   barra.append(relleno);
-  s.append(barra);
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
-      relleno.style.width = `${sec.pct.toFixed(1)}%`;
+      relleno.style.width = `${pct.toFixed(1)}%`;
     })
   );
+  return barra;
+}
 
-  s.append(
-    el('p', 'estado-s',
-      `Regado hace ${sec.transcurridas} h · seca en ~${sec.horas} h`)
-  );
+/**
+ * El estado del sustrato, que es la única pregunta que se hace todos los días.
+ *
+ * Se cuenta en horas y no en días: el grupo 1 seca en unas 60, que son dos
+ * días y medio. En un contador de días enteros ese número no se puede decir, y
+ * por eso el anterior nunca coincidía con la maceta.
+ */
+function pintarRiego(sec) {
+  const l = lecturaDeSecado(sec);
+  const s = el('section', 'estado tarjeta');
 
+  if (!sec) {
+    s.append(el('p', 'estado-n', l.k));
+    s.append(el('p', 'estado-s', l.s));
+    return s;
+  }
+
+  s.append(el('p', 'estado-k', l.k));
+  s.append(el('p', `estado-n${l.urge ? ' urge' : ''}`, l.n));
+  if (l.pct != null) s.append(barraDeSecado(l.pct));
+  s.append(el('p', 'estado-s', l.s));
+  s.append(el('p', 'estado-p', '¿Cómo pesa la maceta?'));
+  return s;
+}
+
+function botonSecado(sec, alAnotar) {
+  const b = el('button', 'btn btn-sec', sec.yaSeco ? 'Corregir el secado' : 'Ya se secó');
+  b.type = 'button';
+  b.addEventListener('click', async () => {
+    b.disabled = true;
+    await alAnotar(Math.max(1, sec.transcurridas));
+  });
+  return b;
+}
+
+/**
+ * Con subconjuntos, un contador por cada uno.
+ *
+ * Las tres veteranas y las ocho nuevas del grupo 2 comparten tanque pero no
+ * cadencia: las grandes secan antes. Un solo contador se reiniciaría con el
+ * riego extra de un subconjunto y le mentiría al otro.
+ */
+function pintarRiegoPorSubconjunto(subs, estados, alAnotar) {
+  const s = el('section', 'estado tarjeta estado-multi');
+  const cols = el('div', 'estado-cols');
+
+  for (const sub of subs) {
+    const sec = estados[sub.id];
+    const l = lecturaDeSecado(sec);
+    const c = el('div', 'estado-col');
+    c.append(el('p', 'estado-k', `${sub.nombre || sub.id}${sub.cantidad_plantas ? ` · ${sub.cantidad_plantas}` : ''}`));
+    c.append(el('p', `estado-n${l.urge ? ' urge' : ''}`, l.n));
+    if (l.pct != null) c.append(barraDeSecado(l.pct));
+    c.append(el('p', 'estado-s', sec ? l.s : 'Sin riegos todavía.'));
+    if (sec) c.append(botonSecado(sec, (horas) => alAnotar(sub.id, sec, horas)));
+    cols.append(c);
+  }
+
+  s.append(cols);
   s.append(el('p', 'estado-p', '¿Cómo pesa la maceta?'));
   return s;
 }
 
 /**
- * Las dos acciones del día, juntas y grandes.
+ * Las acciones del día, juntas y grandes.
  * Registrar un riego reinicia el contador; anotar el secado corrige cuánto
- * tarda de verdad. Nada más se hace desde acá todos los días.
+ * tarda de verdad. Con subconjuntos, el secado se anota en cada columna.
  */
-function pintarAcciones(ultimoRiego, sec, faseId, alRegistrar, alAnotar) {
+function pintarAcciones(sec, alRegistrar, alAnotar) {
   const cont = el('div', 'acciones-p');
 
   const regar = el('button', 'btn', 'Registré un riego');
@@ -283,33 +365,17 @@ function pintarAcciones(ultimoRiego, sec, faseId, alRegistrar, alAnotar) {
   regar.addEventListener('click', alRegistrar);
   cont.append(regar);
 
-  if (ultimoRiego && sec) {
-    const seco = el('button', 'btn btn-sec', sec.yaSeco ? 'Corregir el secado' : 'Ya se secó');
-    seco.type = 'button';
-    seco.addEventListener('click', async () => {
-      seco.disabled = true;
-      await alAnotar({
-        desde: ultimoRiego,
-        fecha: hoyISO(),
-        horas: Math.max(1, sec.transcurridas),
-        fase: faseId,
-      });
-    });
-    cont.append(seco);
-  }
-
+  if (sec && alAnotar) cont.append(botonSecado(sec, alAnotar));
   return cont;
 }
-
-
-
 
 // ---------- formulario ----------
 
 // Los tipos son los que declara cultivo.json en registro_crudo.esquema.
 const TIPOS = ['completo', 'intermedio', 'agua', 'ripening', 'flush'];
 
-function pintarFormulario(cultivo, fase, alRegistrar) {
+function pintarFormulario(g, fase, riegos, sugerencia, alRegistrar) {
+  const { cultivo } = g;
   const s = seccion('Registrar un riego');
 
   const form = el('form');
@@ -333,17 +399,36 @@ function pintarFormulario(cultivo, fase, alRegistrar) {
     return i;
   };
 
+  const opciones = (id, pares, elegido) => {
+    const sel = el('select');
+    sel.id = id;
+    for (const [valor, texto] of pares) {
+      const o = el('option', null, texto);
+      o.value = valor;
+      if (valor === elegido) o.selected = true;
+      sel.append(o);
+    }
+    return sel;
+  };
+
   const fFecha = input('r-fecha', 'date', { value: hoyISO(), required: true });
   campo(campos, '', 'Fecha', '', fFecha);
 
-  const fTipo = el('select');
-  fTipo.id = 'r-tipo';
-  for (const t of TIPOS) {
-    const o = el('option', null, t);
-    o.value = t;
-    fTipo.append(o);
-  }
+  const fTipo = opciones('r-tipo', TIPOS.map((t) => [t, t]), TIPOS[0]);
   campo(campos, '', 'Tipo', '', fTipo);
+
+  // A quién se regó. Sin esto no se puede auditar el completo semanal por
+  // subconjunto (r16) ni saber qué contador reiniciar.
+  const subs = subconjuntosDe(cultivo);
+  let fAlcance = null;
+  if (subs.length) {
+    fAlcance = opciones(
+      'r-alcance',
+      [['todos', 'Todas'], ...subs.map((x) => [x.id, `${x.nombre || x.id}${x.cantidad_plantas ? ` (${x.cantidad_plantas})` : ''}`])],
+      sugerencia.alcance || 'todos'
+    );
+    campo(campos, 'ancho', 'Plantas regadas', '', fAlcance);
+  }
 
   // step="any" a propósito: con un paso fijo, el navegador rechaza los valores
   // que no caen en su grilla, y la app terminaría aceptando solo lo que espera
@@ -356,8 +441,14 @@ function pintarFormulario(cultivo, fase, alRegistrar) {
   campo(campos, '', 'pH', fase ? `obj. ${rango(fase.ph_entrada)}` : '', fPh);
 
   const fLitros = input('r-litros', 'number', { step: 'any', inputMode: 'decimal' });
-  campo(campos, 'ancho', 'Litros por maceta',
-    fase ? `plan ${rango(fase.volumen_por_maceta_l)}` : '', fLitros);
+  campo(campos, '', 'Litros por maceta',
+    fase ? `plan ${volumenTexto(cultivo, fase.volumen_por_maceta_l)}` : '', fLitros);
+
+  // r17: un riego que no llega a drenar concentra sales en vez de lavarlas.
+  // "Sin dato" es una respuesta válida: lo que no se miró no se inventa.
+  const fDrenaje = opciones('r-drenaje', [['', 'sin dato'], ['si', 'sí'], ['no', 'no']], '');
+  campo(campos, '', 'Drenó',
+    Array.isArray(fase?.drenaje_objetivo_pct) ? `obj. ${rango(fase.drenaje_objetivo_pct)} %` : '', fDrenaje);
 
   const fObs = el('textarea');
   fObs.id = 'r-obs';
@@ -397,19 +488,24 @@ function pintarFormulario(cultivo, fase, alRegistrar) {
 
     const num = (v) => (v === '' ? null : Number(v));
 
-    // Nombres de campo según cultivo.json → registro_crudo.esquema.
+    // Nombres de campo según cultivo.json → registro_crudo.esquema, más las
+    // extensiones que pidió el grupo 2: ciclo, alcance y drenaje.
     const res = await registrar({
       fecha: fFecha.value,
+      ciclo: g.ciclo?.id || null,
+      grupo: g.id,
       fase: fase?.id || null,
       tipo: fTipo.value,
+      alcance: fAlcance ? fAlcance.value : 'todos',
       ec_medida: num(fEc.value),
       ph_medido: num(fPh.value),
       litros_por_maceta: num(fLitros.value),
+      drenaje: fDrenaje.value || null,
       ppfd: num(fPpfd.value),
       temp_min_c: num(fTmin.value),
       temp_max_c: num(fTmax.value),
       observacion: fObs.value.trim() || null,
-      productos_aplicados: productosDeLaFase(cultivo, fase, fTipo.value),
+      productos_aplicados: productosDeLaFase(cultivo, fase, fTipo.value, riegos),
     });
 
     aviso.textContent = res.subido
@@ -419,6 +515,7 @@ function pintarFormulario(cultivo, fase, alRegistrar) {
     aviso.classList.add(res.subido ? 'bien' : 'error');
 
     for (const f of [fEc, fPh, fLitros, fPpfd, fTmin, fTmax, fObs]) f.value = '';
+    fDrenaje.value = '';
     boton.disabled = false;
     alRegistrar();
   });
@@ -441,25 +538,25 @@ function pintarFormulario(cultivo, fase, alRegistrar) {
   return s;
 }
 
-
-function pintarRegistros(lista, sinSubir) {
-  if (!lista.length && !sinSubir.length) return null;
+function pintarRegistros(riegos, subs) {
+  if (!riegos.length) return null;
   const s = seccion('Últimos registros');
   const ul = el('ul', 'registros');
 
-  const todos = [
-    ...sinSubir.map((r) => ({ ...r, pendiente: true })),
-    ...lista.map((r) => ({ ...r, pendiente: false })),
-  ]
+  const todos = riegos
+    .filter((r) => r.fecha)
     .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))
     .slice(0, 6);
+  if (!todos.length) return null;
 
   for (const r of todos) {
     const li = el('li');
     li.append(el('span', null, fecha(r.fecha)));
     li.append(el('span', null, r.tipo || '—'));
+    if (r.alcance && r.alcance !== 'todos') li.append(el('span', null, nombreDeAlcance(subs, r.alcance)));
     if (r.ec_medida != null) li.append(el('span', null, `EC ${r.ec_medida}`));
     if (r.ph_medido != null) li.append(el('span', null, `pH ${r.ph_medido}`));
+    if (r.drenaje) li.append(el('span', null, r.drenaje === 'si' ? 'drenó' : 'sin drenaje'));
     if (r.pendiente) li.append(el('span', 'pend', 'sin subir'));
     ul.append(li);
   }
@@ -477,12 +574,24 @@ function plegable(titulo, contenido, clase = '') {
   return d;
 }
 
+/** Sin duplicados por id: lo consolidado por Cowork puede repetir lo que subió la app. */
+function unicos(lista) {
+  const vistos = new Set();
+  return lista.filter((r) => {
+    if (!r?.id) return true;
+    if (vistos.has(r.id)) return false;
+    vistos.add(r.id);
+    return true;
+  });
+}
+
 // ---------- render ----------
 
 // Tipo de riego elegido a mano. Vive fuera del render para sobrevivir a un
-// redibujado, pero atado al contexto en que se eligio: si cambia la fase o
-// entra un riego nuevo, la eleccion caduca y vuelve a mandar la sugerencia.
-// Antes quedaba pegada para siempre y tapaba lo que el plan proyectaba.
+// redibujado, pero atado al contexto en que se eligio: si cambia el grupo, la
+// fase o entra un riego nuevo, la eleccion caduca y vuelve a mandar la
+// sugerencia. Antes quedaba pegada para siempre y tapaba lo que el plan
+// proyectaba.
 let eleccion = null;
 
 export async function render(main) {
@@ -490,20 +599,13 @@ export async function render(main) {
   const aviso = cargando('Leyendo el cultivo…');
   main.append(aviso);
 
-  let estado, cultivo, marca = null;
+  let estado, grupos, estadoFresco, estadoTs;
   try {
     const e = await conCache('estado', leerEstado);
     estado = e.datos;
-
-    const sub = subsistema(estado, 'cultivo');
-    if (!sub?.archivoId && !sub?.ruta) {
-      throw new Error('estado.json no apunta a ningún archivo de cultivo');
-    }
-
-    const c = await conCache('cultivo', () => leerArchivoDeSubsistema(sub));
-    cultivo = c.datos;
-
-    if (!e.fresco || !c.fresco) marca = `Copia local · ${antiguedad(Math.min(e.ts, c.ts))}`;
+    estadoFresco = e.fresco;
+    estadoTs = e.ts;
+    grupos = await cargarGrupos(subsistema(estado, 'cultivo'));
   } catch (e) {
     aviso.remove();
     const s = seccion('🌱 Cultivo');
@@ -513,8 +615,7 @@ export async function render(main) {
   }
 
   // Dónde escribir lo define el contrato, no el código.
-  const subRegistro = subsistema(estado, 'cultivo')?.registro;
-  usarArchivo(subRegistro?.archivo_entrada_app);
+  usarArchivo(subsistema(estado, 'cultivo')?.registro?.archivo_entrada_app);
 
   let enDrive = { riegos: [], secados: [] };
   try {
@@ -523,60 +624,79 @@ export async function render(main) {
   } catch {
     /* sin red o sin sesión: se muestran solo los pendientes locales */
   }
-  const sinSubir = pendientes('riegos');
-  const yaSubidos = enDrive.riegos;
-  const observaciones = [
-    ...secadosConsolidados(cultivo),
-    ...enDrive.secados,
-    ...pendientes('secados'),
-  ];
 
   aviso.remove();
 
-  const sub = subsistema(estado, 'cultivo');
-  const ciclo = cultivo?.ciclo_activo;
+  const g = grupoElegido(grupos);
+  const selector = selectorDeGrupos(grupos, g, () => render(main));
+  if (selector) main.append(selector);
+
+  if (!g.cultivo) {
+    const s = seccion(g.etiqueta);
+    s.append(el('p', 'vacio mal', g.error?.message || 'No se pudo leer el archivo de este grupo.'));
+    main.append(s);
+    return;
+  }
+
+  const { cultivo } = g;
+  const marca = !estadoFresco || !g.fresco
+    ? `Copia local · ${antiguedad(Math.min(estadoTs, g.ts ?? estadoTs))}`
+    : null;
+
+  // Solo lo de este ciclo. Los registros de antes del segundo grupo no dicen
+  // ciclo y son del grupo 1.
+  const soloEste = (lista) => delCiclo(lista, g.ciclo, { legado: g.legado });
+  const riegos = unicos([
+    ...soloEste(pendientes('riegos')).map((r) => ({ ...r, pendiente: true })),
+    ...soloEste(enDrive.riegos),
+    ...(g.ciclo?.riegos_ejecutados || []),
+  ]);
+  const observaciones = [
+    ...secadosConsolidados(cultivo),
+    ...soloEste([...enDrive.secados, ...pendientes('secados')]),
+  ];
+
   const fase = faseDe(cultivo);
+  const subs = subconjuntosDe(cultivo);
+  const puente = CONFIG.SECADO_HORAS?.[g.id] ?? null;
 
   // Los riegos históricos pueden venir con fecha null a propósito (hubo riego,
   // pero no se registró la fecha). Esos no sirven para "último riego".
-  const ultimo =
-    [...sinSubir, ...yaSubidos]
-      .map((r) => r.fecha)
-      .filter(Boolean)
-      .sort()
-      .pop() ||
-    sub?.resumen?.ultimo_riego ||
-    null;
+  const ultimoDe = (alcance = null) =>
+    delAlcance(riegos, alcance).map((r) => r.fecha).filter(Boolean).sort().pop() || null;
+
+  const declarado = /^\d{4}-\d{2}-\d{2}/.test(g.resumen?.ultimo_riego || '') ? g.resumen.ultimo_riego : null;
+  const ultimo = ultimoDe() || (subs.length ? null : declarado);
 
   // La sugerencia mira el plan y las reglas del archivo. La eleccion a mano
-  // solo vale mientras no cambie la fase ni entre un riego nuevo.
-  const registrados = [...sinSubir, ...yaSubidos];
-  const sugerencia = tipoSugerido(cultivo, registrados, fase);
-  const contexto = `${fase?.id || '-'}|${ultimo || '-'}`;
+  // solo vale mientras no cambie el grupo, la fase ni entre un riego nuevo.
+  const sugerencia = tipoSugerido(cultivo, riegos, fase);
+  const contexto = `${g.id}|${fase?.id || '-'}|${ultimo || '-'}`;
   if (eleccion && eleccion.para !== contexto) eleccion = null;
   const tipo = eleccion?.tipo || sugerencia.tipo;
 
-  const irAlPlan = el('a', 'boton-enlace', 'Ver el plan completo del ciclo →');
-  irAlPlan.href = '#/plan';
+  const secadoDe = (alcance, ancla) =>
+    estadoDeSecado(cultivo, ancla, {
+      secados: delAlcance(observaciones, alcance),
+      faseId: fase?.id,
+      puente,
+      alcance,
+    });
 
-  // Cada sección se arma por separado y aislada.
-  //
-  // Antes se construían todas dentro de un array literal: si una sola tiraba un
-  // error, la expresión entera moría y la pantalla quedaba en blanco. Pasó de
-  // verdad, y el síntoma —Cultivo vacío— no decía nada sobre la causa. Ahora,
-  // si una sección falla, se dibuja el error en su lugar y el resto sigue.
-  // Cuatro cosas, no doce.
-  //
-  // La pantalla tenia doce secciones y cada una explicaba su propia razon de
-  // ser. Eso convirtio a Cultivo en un documento que hay que leer, y dejo de
-  // usarse. Lo que se mira todos los dias es una sola pregunta —si toca agua— y
-  // lo que sigue es prepararla. Todo lo demas es consulta, y la consulta vive
-  // en el plan.
-  const sec = estadoDeSecado(cultivo, ultimo, {
-    secados: observaciones,
-    faseId: fase?.id,
-    puente: CONFIG.SECADO_HORAS,
-  });
+  const anotar = async (alcance, desde, horas) => {
+    await registrarSecado({
+      desde,
+      fecha: hoyISO(),
+      horas,
+      fase: fase?.id || null,
+      ciclo: g.ciclo?.id || null,
+      grupo: g.id,
+      alcance: alcance || 'todos',
+    });
+    render(main);
+  };
+
+  const sec = subs.length ? null : secadoDe(null, ultimo);
 
   const abrirRegistro = () => {
     const d = main.querySelector('.registro-d');
@@ -585,31 +705,46 @@ export async function render(main) {
     d.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
+  const irAlPlan = el('a', 'boton-enlace', 'Ver el plan completo del ciclo →');
+  irAlPlan.href = '#/plan';
+
+  // Cada sección se arma por separado y aislada: si una falla, se dibuja el
+  // error en su lugar y el resto sigue. Antes, una sola excepción dejaba la
+  // pantalla en blanco sin decir por qué.
+  //
+  // Cuatro cosas, no doce. Lo que se mira todos los días es una sola pregunta
+  // —si toca agua— y lo que sigue es prepararla. El resto es consulta y vive
+  // en el plan.
   const secciones = [
     ['contexto', () => {
       const partes = [fase ? `${fase.nombre}` : 'Entre fases'];
       const d = diaDeCiclo(cultivo);
-      if (d != null) partes.push(`día ${d}`);
+      if (d != null) partes.push(`día ${d}${fase?.tipo === 'floracion' ? ' de flor' : ''}`);
       const p = el('p', 'contexto', partes.join(' · '));
       if (marca) p.append(el('span', 'marca', ` ${marca}`));
       return p;
     }],
 
-    ['estado', () => pintarRiego(cultivo, ultimo, observaciones, fase?.id)],
+    ['estado', () => {
+      if (!subs.length) return pintarRiego(sec);
+      const estados = Object.fromEntries(subs.map((x) => [x.id, secadoDe(x.id, ultimoDe(x.id))]));
+      return pintarRiegoPorSubconjunto(subs, estados, (alcance, s, horas) =>
+        anotar(alcance, ultimoDe(alcance), horas)
+      );
+    }],
 
-    ['acciones', () => pintarAcciones(ultimo, sec, fase?.id, abrirRegistro, async (obs) => {
-      await registrarSecado(obs);
-      render(main);
-    })],
+    ['acciones', () =>
+      pintarAcciones(sec, abrirRegistro, ultimo && sec ? (horas) => anotar(null, ultimo, horas) : null)],
 
-    ['mezcla', () => pintarMezcla(cultivo, fase, tipo, sugerencia.aviso, (t) => {
+    ['mezcla', () => pintarMezcla(g, fase, tipo, sugerencia, riegos, (t) => {
       eleccion = { tipo: t, para: contexto };
       render(main);
     })],
 
-    ['registro', () => plegable('Registrar el riego', pintarFormulario(cultivo, fase, () => render(main)), 'registro-d')],
+    ['registro', () => plegable('Registrar el riego',
+      pintarFormulario(g, fase, riegos, sugerencia, () => render(main)), 'registro-d')],
     ['ambiente', () => plegable('Ambiente de la fase', pintarAmbiente(fase))],
-    ['registros', () => plegable('Últimos registros', pintarRegistros(yaSubidos, sinSubir))],
+    ['registros', () => plegable('Últimos registros', pintarRegistros(riegos, subs))],
   ];
 
   for (const [nombre, armar] of secciones) {

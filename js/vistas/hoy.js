@@ -176,7 +176,7 @@ function pintarMirada(lista, refrescar) {
 
   for (const a of visibles.slice(0, TOPE_MIRADA)) {
     ul.append(
-      itemOmitible([el('span', 'orig', a.origen), el('span', 'mirada-t', a.texto)], (contenedor) => {
+      itemOmitible([el('span', 'orig', a.etiqueta || a.origen), el('span', 'mirada-t', a.texto)], (contenedor) => {
         omitir(clave(a));
         pie.actualizar();
         vacio.classList.toggle('oculto', Boolean(contenedor?.children.length));

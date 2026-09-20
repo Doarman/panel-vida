@@ -593,6 +593,26 @@ body[data-seccion="rumbo"] { --w-seccion: var(--pv-w-rum); }
 
 .mezcla-nota { margin: 12px 4px 0; font-size: 12.5px; line-height: 1.5; color: var(--pv-alerta); }
 
+/* Aplicacion de evento: va en la lista pero no es una dosis mas de la
+   solucion. Una sola vez por fase, y eso tiene que leerse en la fila. */
+.mezcla li.evento .mz-h { padding-bottom: 6px; }
+.mz-ev {
+  margin: 0;
+  padding: 0 0 12px 24px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--pv-tinta3);
+}
+
+/* El criterio de riego es el drenaje, no el volumen (r17). */
+.mezcla-drenaje {
+  margin: 0 4px 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--pv-tinta2);
+}
+
 .mezcla-agua {
   margin: 12px 0 0;
   padding: 13px 15px;
@@ -612,6 +632,47 @@ body[data-seccion="rumbo"] { --w-seccion: var(--pv-w-rum); }
 
 .sin-dosis-t { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.011em; }
 .sin-dosis-p { margin: 6px 0 0; font-size: 13px; color: var(--pv-tinta2); }
+
+/* ---------- grupos en paralelo ---------- */
+/* Dos ciclos a la vez, nunca mezclados. Las pestañas van arriba de todo y
+   cada una dice su fase y su panel: lo que distingue a un grupo del otro no
+   es el numero, es en que esta cada uno. */
+
+.grupos-sel { display: flex; gap: 6px; margin: 0 0 14px; }
+
+.grupo-b {
+  flex: 1;
+  min-width: 0;
+  min-height: 56px;
+  padding: 10px 12px;
+  border: 1px solid var(--pv-linea);
+  border-radius: var(--pv-r2);
+  background: var(--pv-sup);
+  color: var(--pv-tinta3);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.grupo-b.activo {
+  border-color: var(--ac);
+  background: var(--ac-s);
+  color: var(--pv-tinta);
+  box-shadow: var(--pv-sombra);
+}
+
+.grupo-n { display: block; font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; }
+.grupo-s {
+  display: block;
+  margin-top: 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pv-tinta3);
+}
 
 /* ---------- estado del sustrato ---------- */
 /* La unica pregunta que se hace todos los dias, y por eso la unica que ocupa
@@ -652,6 +713,31 @@ body[data-seccion="rumbo"] { --w-seccion: var(--pv-w-rum); }
   font-weight: 600;
   letter-spacing: -0.005em;
 }
+
+/* Con subconjuntos, un contador por cada uno: las veteranas y las nuevas
+   comparten tanque pero no cadencia, y un solo numero le mentiria a una de
+   las dos. */
+.estado-multi { padding: 16px 14px 16px; }
+.estado-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.estado-col {
+  padding: 12px 8px 14px;
+  border-radius: var(--pv-r2);
+  background: var(--pv-sup2);
+}
+
+.estado-col .estado-k { font-size: 10px; letter-spacing: 0.06em; }
+.estado-col .estado-n {
+  margin-top: 6px;
+  font-size: 24px;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+.estado-col .estado-s { margin-top: 8px; font-size: 11.5px; line-height: 1.45; }
+.estado .estado-col .barra { height: 6px; margin-top: 10px; }
+.estado-col .btn { min-height: 44px; margin-top: 10px; padding: 12px 6px; font-size: 12.5px; }
+/* Sobre el gris de la columna, el botón secundario necesita su propio borde. */
+.estado-col .btn-sec { background: var(--pv-sup); border: 1px solid var(--pv-linea); }
 
 /* Las dos acciones del dia, del mismo tamaño y al alcance del pulgar. */
 .acciones-p { display: flex; gap: 10px; margin-bottom: 20px; }
@@ -803,6 +889,7 @@ body[data-seccion="rumbo"] { --w-seccion: var(--pv-w-rum); }
 .fase-f { flex: none; font-size: 11.5px; color: var(--pv-tinta3); }
 .fase-d { margin: 8px 0 0; font-size: 12.5px; color: var(--pv-tinta2); }
 .fase-mix { margin: 4px 0 0; font-size: 12.5px; color: var(--pv-tinta3); }
+.fase-ev { margin: 4px 0 0; font-size: 12px; color: var(--pv-tinta2); }
 .fase-amb { margin: 4px 0 0; font-size: 12px; color: var(--pv-tinta3); }
 
 .tabla { margin: 0; padding: 0; list-style: none; }
