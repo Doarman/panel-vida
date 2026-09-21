@@ -8,13 +8,13 @@
 
 import { leerEstado } from '../api.js';
 import { subsistema, nombreDeGrupo } from '../contract.js';
-import { el, seccion, error, cargando } from '../ui.js';
+import { el, seccion, error, cargando, plegable } from '../ui.js';
 import { conCache } from '../cache.js';
 import { auditarCultivo, auditarNomenclatura, hallazgosDeclarados } from '../auditoria.js';
 import { cargarGrupos, grupoElegido, selectorDeGrupos } from '../cultivo-grupos.js';
 import {
   hoyISO, fecha, fechaCorta, cuando, rango,
-  faseDe, nombreDe, dosisOrdenadas, cicloDe, subconjuntosDe, volumenTexto,
+  faseDe, nombreDe, dosisOrdenadas, cicloDe, subconjuntosDe, volumenTexto, aguaBase,
 } from '../cultivo-datos.js';
 
 function pintarCabecera(cultivo) {
@@ -225,6 +225,25 @@ function pintarObservaciones(cultivo) {
   return s;
 }
 
+/**
+ * El agua de red ya trae EC.
+ *
+ * Vive acá y no al lado de las dosis: se lee una vez y cambia cómo se
+ * interpretan todos los objetivos de EC del ciclo. Sin esto, el objetivo de
+ * la fase se lee como si fuera aporte de nutrientes y la mezcla termina por
+ * encima de lo buscado.
+ */
+function pintarAgua(cultivo) {
+  const a = aguaBase(cultivo);
+  if (!a) return null;
+
+  const s = seccion('El agua de red');
+  const linea = [`EC ${a.ec}`, a.ph != null ? `pH ${a.ph}` : null].filter(Boolean).join('  ·  ');
+  s.append(el('p', 'fase-d', linea));
+  if (a.nota) s.append(el('p', 'pie', a.nota));
+  return s;
+}
+
 function pintarMezclaOrden(cultivo) {
   const orden = cultivo?.orden_de_mezcla || [];
   if (!orden.length) return null;
@@ -296,6 +315,22 @@ function pintarAuditoria(cultivo, estado) {
   return s;
 }
 
+/**
+ * Cada apartado, plegado y con cuántos trae.
+ *
+ * El plan entero son nueve mil píxeles de scroll: leerlo de corrido no lo hace
+ * nadie y buscar algo adentro es peor. Plegado se vuelve un índice —se ve todo
+ * lo que hay de una— y se abre solo lo que se fue a buscar. El título sale del
+ * propio apartado, así no hay dos nombres para lo mismo.
+ */
+function plegarApartado(nodo, cuantos = null) {
+  if (!nodo) return null;
+  const t = nodo.querySelector(':scope > .titulo');
+  const titulo = t?.textContent || 'Ver';
+  t?.remove();
+  return plegable(cuantos ? `${titulo} · ${cuantos}` : titulo, nodo, 'apartado');
+}
+
 export async function render(main) {
   main.textContent = '';
   const aviso = cargando('Leyendo el plan…');
@@ -328,25 +363,31 @@ export async function render(main) {
   }
 
   const { cultivo } = g;
+  const ciclo = cicloDe(cultivo);
+  const cuantos = (x) => (Array.isArray(x) && x.length ? x.length : null);
+
+  // El ciclo y lo que se contradice quedan abiertos: son las dos cosas que se
+  // vienen a ver sin buscarlas. El resto es consulta y se abre a pedido.
   const secciones = [
-    () => pintarCabecera(cultivo),
-    () => pintarAuditoria(cultivo, estadoLeido),
-    () => pintarObservaciones(cultivo),
-    () => pintarFases(cultivo),
-    () => pintarRiegos(cultivo),
-    () => pintarHitos(cultivo),
-    () => pintarSanidad(cultivo),
-    () => pintarSinIntegrar(estadoLeido, grupos),
-    () => pintarMezclaOrden(cultivo),
-    () => pintarReglas(cultivo),
-    () => pintarEstimados(cultivo),
+    { armar: () => pintarCabecera(cultivo), fijo: true },
+    { armar: () => pintarAuditoria(cultivo, estadoLeido), fijo: true },
+    { armar: () => pintarObservaciones(cultivo), n: cuantos(ciclo?.observaciones) },
+    { armar: () => pintarFases(cultivo), n: cuantos(ciclo?.fases) },
+    { armar: () => pintarRiegos(cultivo), n: cuantos(ciclo?.riegos_programados) },
+    { armar: () => pintarHitos(cultivo), n: cuantos((ciclo?.hitos || []).filter((h) => h.estado !== 'hecho')) },
+    { armar: () => pintarSanidad(cultivo) },
+    { armar: () => pintarSinIntegrar(estadoLeido, grupos) },
+    { armar: () => pintarAgua(cultivo) },
+    { armar: () => pintarMezclaOrden(cultivo) },
+    { armar: () => pintarReglas(cultivo), n: cuantos(cultivo?.reglas_no_negociables) },
+    { armar: () => pintarEstimados(cultivo), n: cuantos(cultivo?.datos_estimados) },
   ];
 
   // Igual que en Cultivo: una sección que falla no se lleva puesta la pantalla.
-  for (const armar of secciones) {
+  for (const { armar, fijo, n } of secciones) {
     try {
-      const p = armar();
-      if (p) main.append(p);
+      const nodo = armar();
+      if (nodo) main.append(fijo ? nodo : plegarApartado(nodo, n));
     } catch (e) {
       main.append(error('Plan', e));
     }

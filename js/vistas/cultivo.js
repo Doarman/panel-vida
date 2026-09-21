@@ -14,14 +14,14 @@ import { CONFIG } from '../../config.js';
 import { leerEstado } from '../api.js';
 import { subsistema } from '../contract.js';
 import { registrar, registrarSecado, sincronizar, pendientes, subidos, usarArchivo } from '../riegos.js';
-import { el, seccion, cargando, error } from '../ui.js';
+import { el, seccion, cargando, error, plegable } from '../ui.js';
 import { conCache, antiguedad } from '../cache.js';
 import { cargarGrupos, grupoElegido, selectorDeGrupos } from '../cultivo-grupos.js';
 import {
   hoyISO, fecha, rango,
   faseDe, diaDeCiclo, nombreDe, infoProducto,
   totalMezcla, productosDeLaFase, posicionEnMezcla,
-  ordenDeLaFase, aguaBase, estadoDeSecado, fechaCorta,
+  ordenDeLaFase, estadoDeSecado, fechaCorta,
   recetaDe, tiposDeRiego, tipoSugerido, secadosConsolidados,
   delCiclo, delAlcance, subconjuntosDe, volumenTexto, eventosDeLaFase,
 } from '../cultivo-datos.js';
@@ -95,12 +95,12 @@ function pintarMezcla(g, fase, tipo, sugerencia, riegos, alCambiarTipo) {
   // Se explica la regla y se deja la eleccion: la app no decide agronomia.
   if (sugerencia.aviso) s.append(el('p', 'mezcla-aviso', sugerencia.aviso));
 
-  // Con subconjuntos, el riego del plan puede ser solo para uno de ellos.
+  // Con subconjuntos, el riego del plan puede ser solo para uno de ellos. La
+  // fase no se repite acá: ya está en la línea de contexto, arriba de todo.
   const subs = subconjuntosDe(cultivo);
-  const para = sugerencia.alcance && tipo === sugerencia.tipo
-    ? ` · para ${nombreDeAlcance(subs, sugerencia.alcance)}`
-    : '';
-  s.append(el('p', 'mezcla-fase', `Fase ${fase.id} · ${fase.nombre}${para}`));
+  if (sugerencia.alcance && tipo === sugerencia.tipo) {
+    s.append(el('p', 'mezcla-fase', `Para ${nombreDeAlcance(subs, sugerencia.alcance)}`));
+  }
 
   if (!receta.declarado) {
     s.append(el('p', 'vacio', `cultivo.json no declara qué lleva un riego "${tipo}".`));
@@ -133,7 +133,6 @@ function pintarMezcla(g, fase, tipo, sugerencia, riegos, alCambiarTipo) {
   const dosis = [...receta.dosis, ...eventosPendientes].sort(
     (a, b) => posicionEnMezcla(cultivo, a.clave) - posicionEnMezcla(cultivo, b.clave)
   );
-  const notas = receta.notas;
   const total = totalMezcla(cultivo, fase);
 
   // Punto de partida: lo que dan las macetas de esta fase. Pero el que manda es
@@ -205,6 +204,14 @@ function pintarMezcla(g, fase, tipo, sugerencia, riegos, alCambiarTipo) {
     ol.append(li);
     filas.push({ d, cant });
   }
+
+  // El último paso del orden de mezcla no es un producto y no tiene fila
+  // propia: medir la EC recién al final, con todo adentro, es lo que hace que
+  // el número sea medido y no calculado (r4).
+  const pasos = ordenDeLaFase(cultivo, dosis);
+  const cierre = pasos.length > 1 ? pasos.at(-1) : null;
+  if (cierre) ol.append(el('li', 'mz-fin', cierre));
+
   s.append(ol);
 
   const recalcular = () => {
@@ -230,23 +237,10 @@ function pintarMezcla(g, fase, tipo, sugerencia, riegos, alCambiarTipo) {
         `${nombreDe(e.clave)}${e.numero ? ` (aplicación ${e.numero})` : ''} ya entró en el completo del ${fechaCorta(e.aplicadoEl)}. No se repite en la fase (r14).`)
     );
   }
-  for (const n of notas) s.append(el('p', 'mezcla-nota', n));
-  if (receta.nota) s.append(el('p', 'mezcla-nota', receta.nota));
-
-  // El agua ya trae EC. Sin esto, el objetivo de la fase se lee como si fuera
-  // aporte de nutrientes y la mezcla termina por encima de lo buscado.
-  const agua = aguaBase(cultivo);
-  if (agua && receta.ec) {
-    s.append(
-      el('p', 'mezcla-agua', `El agua ya aporta EC ${agua.ec}. El objetivo ${rango(receta.ec)} es EC total medida en el tanque, no lo que suman los productos.`)
-    );
-  }
-
-  // Solo los pasos que corresponden a esta fase: el orden completo del ciclo
-  // incluye productos que hoy no van.
-  const pasos = ordenDeLaFase(cultivo, dosis);
-  if (pasos.length) s.append(el('p', 'pie', `Orden: ${pasos.join(' → ')}`));
-
+  // Lo que queda afuera y por qué: las notas de cada producto y de cada tipo
+  // de riego, el aporte de EC del agua y el orden completo del ciclo se leen
+  // una vez y después estorban todos los días. Viven en el plan y en el
+  // detalle de cada fila. Acá queda lo que cambia una decisión de hoy.
   return s;
 }
 
@@ -376,7 +370,8 @@ const TIPOS = ['completo', 'intermedio', 'agua', 'ripening', 'flush'];
 
 function pintarFormulario(g, fase, riegos, sugerencia, alRegistrar) {
   const { cultivo } = g;
-  const s = seccion('Registrar un riego');
+  // Sin título propio: va dentro de un plegable que ya dice qué es.
+  const s = el('section', 'bloque');
 
   const form = el('form');
   const campos = el('div', 'campos');
@@ -565,15 +560,6 @@ function pintarRegistros(riegos, subs) {
   return s;
 }
 
-/** Una sección que se abre solo si la necesitás. */
-function plegable(titulo, contenido, clase = '') {
-  if (!contenido) return null;
-  const d = el('details', `plegable ${clase}`);
-  d.append(el('summary', null, titulo));
-  d.append(contenido);
-  return d;
-}
-
 /** Sin duplicados por id: lo consolidado por Cowork puede repetir lo que subió la app. */
 function unicos(lista) {
   const vistos = new Set();
@@ -741,10 +727,16 @@ export async function render(main) {
       render(main);
     })],
 
-    ['registro', () => plegable('Registrar el riego',
-      pintarFormulario(g, fase, riegos, sugerencia, () => render(main)), 'registro-d')],
-    ['ambiente', () => plegable('Ambiente de la fase', pintarAmbiente(fase))],
-    ['registros', () => plegable('Últimos registros', pintarRegistros(riegos, subs))],
+    // Un solo plegable al pie: cargar el riego y ver los últimos es el mismo
+    // momento. El ambiente de la fase se mira en el plan, no parado frente al
+    // balde.
+    ['registro', () => {
+      const caja = el('div');
+      caja.append(pintarFormulario(g, fase, riegos, sugerencia, () => render(main)));
+      const ultimos = pintarRegistros(riegos, subs);
+      if (ultimos) caja.append(ultimos);
+      return plegable('Registrar el riego', caja, 'registro-d');
+    }],
   ];
 
   for (const [nombre, armar] of secciones) {

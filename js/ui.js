@@ -17,6 +17,15 @@ export function seccion(titulo) {
   return s;
 }
 
+/** Una sección que se abre solo si la necesitás. */
+export function plegable(titulo, contenido, clase = '') {
+  if (!contenido) return null;
+  const d = el('details', `plegable ${clase}`);
+  d.append(el('summary', null, titulo));
+  d.append(contenido);
+  return d;
+}
+
 export function error(titulo, e) {
   const s = seccion(titulo);
   s.append(el('p', 'vacio mal', e?.message || String(e)));

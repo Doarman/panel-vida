@@ -349,7 +349,16 @@ test('la eleccion de grupo se mantiene entre Cultivo y el plan', async ({ page }
 
   await expect(page.locator('.grupo-b.activo')).toContainText('Grupo 2');
   await expect(page.locator('.ciclo-f')).toContainText('Grupo 2');
-  // El plan del grupo 2 muestra el PPFD de cada subconjunto y el drenaje.
+
+  // El plan abre plegado: es un índice, no un documento para leer de corrido.
+  // Cada apartado dice cuántos trae, y se abre el que se fue a buscar.
+  const fases = page.locator('.plegable.apartado').filter({ hasText: 'Fases' });
+  await expect(fases.locator('summary')).toHaveText('Fases · 2');
+  await expect(page.locator('.fase').first()).toBeHidden();
+
+  await fases.locator('summary').click();
+  await expect(page.locator('.fase.actual .fase-d')).toBeVisible();
+  // El PPFD de cada subconjunto y el drenaje, que solo tiene el grupo 2.
   await expect(page.locator('.fase.actual .fase-d')).toContainText('Veteranas 700 / Nuevas 500');
   await expect(page.locator('.fase.actual .fase-d')).toContainText('drenaje 10–20 %');
 });

@@ -365,6 +365,10 @@ for (const [nombre, grupo, ruta] of VISTAS) {
     await preparar(page, grupo);
     await page.goto(`/#/${ruta}`);
     await page.waitForFunction(() => !document.querySelector('.cargando'));
+    // En el plan se abre un apartado, para ver como queda desplegado.
+    if (ruta === 'plan') {
+      await page.locator('.plegable.apartado > summary').filter({ hasText: 'Fases' }).click();
+    }
     await page.waitForTimeout(400);
     await page.screenshot({ path: `tests/e2e/capturas/real-${info.project.name}-${nombre}.png`, fullPage: true });
   });

@@ -591,6 +591,14 @@ body[data-seccion="rumbo"] { --w-seccion: var(--pv-w-rum); }
 
 .mezcla li.abierta .mz-info { max-height: 260px; padding: 0 12px 14px; opacity: 1; }
 
+/* El cierre del orden de mezcla: no es un producto, no lleva cantidad. */
+.mz-fin {
+  padding: 13px 0 14px 24px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--pv-tinta2);
+}
+
 .mezcla-nota { margin: 12px 4px 0; font-size: 12.5px; line-height: 1.5; color: var(--pv-alerta); }
 
 /* Aplicacion de evento: va en la lista pero no es una dosis mas de la
@@ -778,6 +786,27 @@ body[data-seccion="rumbo"] { --w-seccion: var(--pv-w-rum); }
 .plegable[open] > summary::after { content: "▴"; }
 .plegable[open] > summary + * { border-radius: 0 0 var(--pv-r) var(--pv-r); margin-top: 0; }
 .plegable .bloque { margin-bottom: 0; }
+
+/* Un apartado del plan: el contenido cuelga del summary y forma una sola
+   pieza con el. Sin esto quedan dos tarjetas apiladas con un escalon. */
+.plegable.apartado > .bloque {
+  padding: 6px 18px 14px;
+  background: var(--pv-sup);
+  border-radius: 0 0 var(--pv-r) var(--pv-r);
+  box-shadow: var(--pv-sombra);
+}
+
+.plegable.apartado > .bloque > ul,
+.plegable.apartado > .bloque > ol,
+.plegable.apartado > .bloque > .lista {
+  padding-left: 0;
+  padding-right: 0;
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.plegable.apartado > .bloque > .pie:last-child { margin-bottom: 0; }
 
 /* ---------- proyección y listas ---------- */
 
