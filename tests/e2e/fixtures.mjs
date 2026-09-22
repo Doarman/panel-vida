@@ -198,10 +198,11 @@ export const CULTIVO = {
           },
         ],
         ambiente: { temp_luz_c: [22, 24], temp_oscuridad_c: [17, 20], hr_pct: [42, 48], diferencial_c: [6, 8] },
-        // Contradiccion deliberada: la fase dice 1150 y la accion 1200. Es la
-        // regresion real que volvio en la v1.7.0, puesta aca para que la
-        // seccion de auditoria tenga algo que mostrar.
-        acciones: ['Hybrids llega a 1 g/L: techo absoluto, SOLO esta semana', 'Subir a 800 PPFD solo si el sustrato seca en 24-36h'],
+        // Contradiccion deliberada: la fase dice 700 con techo 800 y la accion
+        // menciona 1200, que no esta declarado en ningun campo. Es la regresion
+        // real que volvio en la v1.7.0, y lo que el auditor tiene que levantar.
+        // Un numero que la fase SI declara (el techo) no seria contradiccion.
+        acciones: ['Hybrids llega a 1 g/L: techo absoluto, SOLO esta semana', 'Subir a 1200 PPFD solo si el sustrato seca en 24-36h'],
         nutricion_intermedio: { ...NUTRICION_INTERMEDIO, trico_mas_g_l: 0.5 },
         nutricion_intermedio_nota: NOTA_INTERMEDIO,
         ec_objetivo_intermedio: null, ph_entrada_intermedio: [6.2, 6.4],

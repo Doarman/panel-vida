@@ -108,6 +108,21 @@ test('no reclama por un hito futuro', () => {
   assert.equal(buscar(auditarCultivo(sano, HOY), /pendiente/), undefined);
 });
 
+test('un techo condicional nombrado en la accion no es una contradiccion', () => {
+  // v1.11.0 dejo S3 en 500 con techo 650, y su accion dice "subir a 650 solo
+  // si el sustrato seca en 24-36 h". El numero ya esta declarado en la fase:
+  // marcarlo seria enseñar a ignorar al auditor.
+  const sano2 = structuredClone(sano);
+  sano2.ciclo_activo.fases[0].ppfd = 500;
+  sano2.ciclo_activo.fases[0].ppfd_techo = 650;
+  sano2.ciclo_activo.fases[0].acciones = ['Subir a 650 PPFD solo si el sustrato seca en 24-36h'];
+  assert.equal(buscar(auditarCultivo(sano2, HOY), /¿Cuál manda\?/), undefined);
+
+  // Un numero que la fase no declara en ningun campo sí se pregunta.
+  sano2.ciclo_activo.fases[0].acciones = ['Subir a 900 PPFD en cuanto arranque el engorde'];
+  assert.ok(buscar(auditarCultivo(sano2, HOY), /menciona 900/));
+});
+
 // --- la luz: lo que el plan pide contra lo que el panel da ---
 //
 // Es el hallazgo g2-a1, que se encontró comparando dos archivos a mano: el

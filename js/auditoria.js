@@ -67,12 +67,21 @@ export function auditarCultivo(cultivo, hoy) {
 
   // El PPFD de la fase contra el que mencionan sus propias acciones. Es la
   // incoherencia atada al fallo que arruinó el ciclo anterior.
+  //
+  // Un número que la fase ya declara en otro campo no es contradicción: una
+  // acción que dice "subir a 650 solo si el sustrato seca en 24-36 h" está
+  // nombrando el techo condicional, no discutiendo con el nominal. Marcarlo
+  // sería enseñar a ignorar al auditor, que es la única forma de romperlo.
   for (const f of fases) {
+    const declarados = new Set(
+      [f.ppfd, f.ppfd_techo, ...ppfdsDe(f).flatMap((x) => [x.ppfd, x.techo])]
+        .filter((x) => typeof x === 'number')
+    );
     for (const a of f.acciones || []) {
       const m = a.match(/(\d{3,4})\s*PPFD|PPFD\s*(?:a|de)?\s*(\d{3,4})/i);
       if (!m) continue;
       const n = Number(m[1] || m[2]);
-      if (f.ppfd != null && n !== f.ppfd) {
+      if (f.ppfd != null && !declarados.has(n)) {
         out.push({
           clave: `ppfd-${f.id}-${n}`,
           texto: `La fase ${f.id} declara ${f.ppfd} PPFD y una de sus acciones menciona ${n}. ¿Cuál manda?`,
